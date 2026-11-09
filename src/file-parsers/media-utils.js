@@ -22,9 +22,9 @@ const EMU_PER_PX = 9525;
 const EMU_PER_PT = 12700;
 const DEFAULT_PX = 300;
 const DEFAULT_PT = Math.round(DEFAULT_PX * 72 / 96);
-const MAX_PX = 512;
-const VECTOR_WEBP_QUALITY = 0.72;
-const MAX_VECTOR_DATAURL_BYTES = 220 * 1024;
+const MAX_PX = 1600;
+const VECTOR_WEBP_QUALITY = 0.86;
+const MAX_VECTOR_DATAURL_BYTES = 900 * 1024;
 
 const toNumber = (value) => {
     const num = Number(value);
@@ -296,7 +296,7 @@ export const getZipSafetyStats = (zip) => {
 
 const computeHash = async (blob) => {
     const buffer = await blob.arrayBuffer();
-    const digest = await crypto.subtle.digest('SHA-1', buffer);
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
     return Array.from(new Uint8Array(digest))
         .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
@@ -304,12 +304,20 @@ const computeHash = async (blob) => {
 
 const MIN_IMAGE_BYTES = 256;
 
-export const processAndSaveImage = async (blob, width, height) => {
+export const processAndSaveImage = async (blob, width, height, meta = {}) => {
     if (!blob || blob.size < MIN_IMAGE_BYTES) return '';
     const hash = await computeHash(blob);
-    const exists = await LocalStore.getMeta(hash);
+    // Metadata alone is not proof that the image bytes survived a failed or
+    // interrupted migration. Re-parsing a source document must be able to
+    // repopulate the new attachment cache when the blob itself is missing.
+    const exists = await LocalStore.getImage(hash);
     if (!exists) {
-        await LocalStore.saveImage(hash, blob, { width, height, mime: blob.type });
+        await LocalStore.saveImage(hash, blob, {
+            ...meta,
+            width,
+            height,
+            mime: blob.type
+        });
     }
     return `cid:${hash}`;
 };
@@ -430,7 +438,14 @@ const resolveImageReference = async (node, ctx) => {
                 const refId = await processAndSaveImage(
                     blob,
                     size?.pxWidth || DEFAULT_PX,
-                    size?.pxHeight || DEFAULT_PX
+                    size?.pxHeight || DEFAULT_PX,
+                    {
+                        source: 'rendered_vector',
+                        originalMime: mime,
+                        renderMime: parsed.mime,
+                        renderQuality: VECTOR_WEBP_QUALITY,
+                        renderMaxSide: MAX_PX
+                    }
                 );
                 ctx.mediaCache.set(cacheKey, refId || '');
                 return refId || '';
@@ -441,7 +456,11 @@ const resolveImageReference = async (node, ctx) => {
     const refId = await processAndSaveImage(
         blob,
         size?.pxWidth || DEFAULT_PX,
-        size?.pxHeight || DEFAULT_PX
+        size?.pxHeight || DEFAULT_PX,
+        {
+            source: 'original_embedded',
+            originalMime: mime
+        }
     );
     ctx.mediaCache.set(cacheKey, refId || '');
     return refId || '';

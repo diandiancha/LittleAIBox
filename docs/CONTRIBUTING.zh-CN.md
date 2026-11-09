@@ -57,12 +57,14 @@
 ## 🧑‍💻 开发环境设置
 
 **要求**
-- Node.js ≥ 18
+- Node.js 20.x 至少 20.19，或 22.12 及以上（与 Vite 一致）
 - npm ≥ 9
 - Git（最新版）
 - VS Code（推荐）
 
 **本地启动**
+
+本仓库构建前端，不包含完整托管服务。使用服务功能时，手动复制 `.env.example` 为 `.env.local`，通过 `VITE_API_BASE_URL` 配置兼容后端来源地址。本地开发不再默认使用官方生产 API；`VITE_*` 会公开进入浏览器代码，不能放密钥。
 
 ```bash
 npm install
@@ -95,14 +97,19 @@ LittleAIBox/
 │   ├── db.js              # IndexedDB 封装
 │   ├── i18n.js            # 国际化
 │   ├── mermaid-renderer.js # 图表渲染
+│   ├── rendering/         # 实际使用的 Mermaid/Vega 渲染器与主题配置
+│   ├── mathrender/        # 公式预处理与渲染
+│   ├── keyboard/          # 原生/浏览器驱动与聊天适配
+│   ├── file-parsers/      # 文档读取与解析生命周期
+│   ├── worker-parsers/    # 文档解析 Worker
 │   ├── floating-timeline.js # 浮动时间轴导航
 │   ├── style.css          # 全局样式
 │   └── sw-custom.js       # Service Worker
 ├── public/                 # 静态资源
-│   ├── locales/           # 翻译文件（5种语言）
+│   ├── locales/           # 七份语言目录
 │   ├── libs/              # 第三方库
 │   ├── images/            # 图片和图标
-│   └── manifest.webmanifest # PWA 清单
+│   └── shared/            # 共享浏览器模块；manifest.json 在构建时生成
 ├── appshow/                # 按语言分类的截图
 ├── capacitor.config.json   # 移动应用配置
 ├── vite.config.js          # 构建配置
@@ -184,9 +191,18 @@ async function handleFileUpload(file) {
    git checkout -b feature/我的功能
    ```
 
-3. **测试更改** — 如果可能，在多个浏览器中测试
+3. **测试更改** — 执行 `npm test` 和 `npm run build`，再验证受影响的浏览器行为
 
 4. **推送并打开 PR**
+
+**核心机制验证与源码边界**
+
+- 图表和公式修复使用仓库自带库及完整复现输入，检查代码围栏、中文、主题与流式完成行为。
+- 文档解析使用脱敏样例，检查文字、图片引用、Worker 及相关回退路径。
+- 键盘修改注明已验证的浏览器和设备；Node 测试与桌面缩放不能证明原生键盘正确。
+- PR 如实说明实际检查与剩余验证边界，共享模块修改要追踪现有调用者。
+- 不提交后端实现、订阅支付规则、托管路由、凭据、签名材料和用户数据；文档仍可以完整介绍项目架构。
+- 实际图表实现位于 `src/rendering/`，顶层旧文件仅作为兼容入口。
 
 **Pull Request 模板**
 
@@ -278,6 +294,8 @@ Bug 的清晰描述。
 - 🇬🇧 英语 (en)
 - 🇯🇵 日语 (ja)
 - 🇰🇷 韩语 (ko)
+- 🇪🇸 西班牙语 (es)
+- 🇫🇷 法语 (fr)
 
 **添加新语言**
 
@@ -288,7 +306,7 @@ cp public/locales/en.json public/locales/您的语言.json
 编辑值，保持键相同，然后在 `src/i18n.js` 中添加您的语言代码：
 
 ```javascript
-const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', '您的语言'];
+const SUPPORTED_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'es', 'ja', 'ko', 'fr', '您的语言'];
 ```
 
 测试：`npm run dev` → 在设置中切换到您的语言 → 验证所有 UI 元素已翻译。

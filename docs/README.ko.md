@@ -17,6 +17,8 @@
 
 </div>
 
+> **공개 범위와 갱신:** 이 문서는 전체 프로젝트의 기능과 설계를 설명합니다. 공개 저장소는 선택한 프런트엔드 스냅샷이며 백엔드, 결제, 상용 권한 규칙과 인증 정보를 포함하지 않습니다. 3.1.0은 차트·수식, 문서 파서 Worker와 키보드 처리를 갱신합니다. 로컬 분석과 모델로의 전송은 별도 작업입니다. 최신 실행 조건과 구조는 [English README](../README.md)를 참고하세요.
+
 ---
 
 > 🎓 이 프로젝트는 교육 및 연구 목적으로 개발되었습니다。
@@ -77,9 +79,8 @@ LittleAIBox는 다음 사용자에게 완벽합니다:
 > - 대화 타임라인 내비게이션
 > - 듀얼 API 키 관리, 지능형 로드 밸런싱
 > - 사용자 정의 가능한 AI 매개변수 및 작업 사전 설정
-> - 음성 입력 지원
 >
-> 기존 AI 애플리케이션과 달리 LittleAIBox는 로컬에서 실행되어 파일과 메시지가 디바이스를 떠나지 않습니다. 프라이버시를 강화하고 지능형 API 키 로테이션 메커니즘을 채택하며, 안정적인 글로벌 액세스를 제공하고 채팅 경험을 최적화하기 위한 사용자 정의 AI 매개변수를 허용합니다. 사용자는 선택적으로 클라우드 동기화에 등록할 수 있지만, 플랫폼은 계정 없이도 완전히 작동하며 위치나 요청 원본을 노출하지 않습니다. LittleAIBox는 오픈 소스이고 가볍게 설계되었으며, 프라이버시, 제어 및 자유를 중시하는 사용자를 위해 만들어졌습니다.
+> 문서 분석과 표시는 브라우저에서 처리합니다. 메시지 전송이나 클라우드 기능은 선택한 내용을 설정된 서비스와 모델 제공자에게 보낼 수 있습니다. 로컬 분석은 오프라인 추론을 의미하지 않습니다.
 >
 > *[Product Hunt에서 보기 →](https://www.producthunt.com/products/littleaibox)*
 
@@ -137,7 +138,6 @@ LittleAIBox는 다음 사용자에게 완벽합니다:
   - **검색 모드**: 최신 정보를 얻기 위한 실시간 웹 검색 통합
   - **연구 모드**: Semantic Scholar API 기반 학술 연구 - 관련 학술 논문을 자동으로 검색 및 인용하고, 구조화된 응답(초록/서론/방법/결과/토론/결론)을 제공하며, 본문 인용 [1], [2]... 제공
   - **이미지 생성 모드**: AI 기반 이미지 생성
-- **음성 입력**: 음성-텍스트 입력 지원(Chrome 데스크톱에서 최적)
 - **사용자 정의 AI 매개변수**: AI 동작을 세밀하게 조정:
   - 역할 사용자 정의를 위한 시스템 프롬프트
   - 온도 제어(창의성 vs 일관성)
@@ -187,90 +187,185 @@ LittleAIBox는 다음 사용자에게 완벽합니다:
 ### 🏗️ 시스템 아키텍처 다이어그램
 
 ```mermaid
-graph TB
-    subgraph "클라이언트 레이어"
-        A[Vite + Tailwind + Capacitor]
-        H[클라이언트 측 처리]
-        I[PPTX, PDF, DOCX, XLSX 파싱]
-        J[IndexedDB + localStorage]
-        A --> H
-        H --> I
-        H --> J
-    end
-    
-    subgraph "백엔드 - Cloudflare Pages"
-        B[API 게이트웨이]
-        B1[인증 핸들러]
-        B2[채팅 핸들러]
-        B3[API 핸들러]
-        B4[공유 핸들러]
-        B --> B1
-        B --> B2
-        B --> B3
-        B --> B4
-        
-        subgraph "엔터프라이즈 API 관리"
-            B5[API 키 풀]
-            B6[헬스 체크]
-            B7[서킷 브레이커]
-            B8[재시도 관리]
-            B9[4단계 저하]
-            B5 --> B6
-            B6 --> B7
-            B7 --> B8
-            B8 --> B9
+flowchart TB
+    %% The complete project is shown; the public frontend snapshot is partial.
+    subgraph FRONTEND["Complete frontend: Web / PWA / Capacitor; public snapshot is partial"]
+        direction TB
+        subgraph INTERACTION["Interaction and platform adapters"]
+            F_ENTRY["Application entry / routing / settings"]
+            F_COMPOSER["Composer / attachments / mode selection"]
+            F_KEYBOARD["Native and browser keyboard drivers"]
+            F_VIEWPORT["Viewport sampling / scroll anchoring"]
+            F_I18N["Locales / themes / resource loading"]
+            F_NATIVE["Native bridge / files / sharing / updates"]
         end
-        
-        B2 --> B5
-        B3 --> B5
+        subgraph DOCUMENTS["Document and multimodal processing"]
+            F_READERS["PDF / Office / text readers"]
+            F_WORKERS["PDF / spreadsheet Workers and fallback"]
+            F_IMAGES["Image blobs / hashes / CID references"]
+            F_DOC_PLAN["Document intent / task routing / chunks"]
+            F_DOC_PROCESS["Summary / retrieval / code structure"]
+            F_VISION["Relevant image selection / visual review"]
+        end
+        subgraph ORCHESTRATION["Request and retrieval orchestration"]
+            F_HISTORY["Conversation history / context budget"]
+            F_RETRIEVAL["Search / research planning and evidence"]
+            F_CONTEXT["Document / image / conversation context"]
+            F_ASSEMBLER["Messages / model parameters / request IDs"]
+            F_TRANSPORT["Request transport / cancellation / errors"]
+        end
+        subgraph PRESENTATION["Streaming and productivity"]
+            F_STREAM["Response stream / pacing / incremental DOM"]
+            F_MARKDOWN["Markdown / highlighting / math protection"]
+            F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
+            F_IMAGE_VIEW["CID resolution / generated image layout"]
+            F_EXPORT["Word / Excel / PPT / PDF export"]
+            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+        end
+        subgraph CLIENT_STATE["Conversation and local state"]
+            F_CHAT["Conversations / turns / message identity"]
+            F_SYNC["Save queue / sync state / remote changes"]
+            F_CACHE["IndexedDB / cache policy / eviction"]
+            F_PWA["Service Worker / PWA cache and updates"]
+            F_BRIDGE["Parent-child conversation context bridge"]
+        end
     end
-    
-    subgraph "외부 서비스"
-        C[Gemini API]
-        D[Brave Search API]
-        D1[GNews API]
-        D2[pollinations.ai]
+
+    subgraph SHARED["Frontend/backend contracts: shared-runtime"]
+        S_MODELS["Model metadata / request and context policy"]
+        S_ATTACH["Image protocol / attachment hashes and persistence"]
+        S_SYNC["Conversation / turn order and sync state"]
     end
-    
-    subgraph "Cloudflare 인프라"
-        E[Cloudflare R2<br/>객체 스토리지]
-        F[Cloudflare D1<br/>SQLite 데이터베이스]
-        G1[Cloudflare KV<br/>게스트 사용량]
-        G2[Cloudflare KV<br/>프록시 캐시]
-        G3[Cloudflare KV<br/>세션 캐시]
+
+    subgraph SERVICE["Cloudflare Pages Functions: backend source not included"]
+        B_GATEWAY["Unified entry / version checks / routing"]
+        B_SESSION["Sessions / visitor identity / access control"]
+        B_AUTH["Email login / OAuth / MFA / password flows"]
+        B_DATA["Conversation / turn / attachment / share APIs"]
+        B_MODEL["Model requests / tools / streamed responses"]
+        B_SEARCH["Web / image / academic retrieval"]
+        B_RESOURCE["Image generation / resource proxying"]
+        B_STORAGE["Message commits / titles / attachment lifecycle"]
     end
-    
-    subgraph "이메일 및 스토리지"
-        K[Resend API<br/>이메일 서비스]
-        L[아바타 및 파일<br/>R2 스토리지]
+
+    subgraph MODEL_RELIABILITY["Model integration and reliability responsibilities"]
+        M_ADAPTER["Model catalog / parameters / provider adapters"]
+        M_KEYS["User keys / server pools / health statistics"]
+        M_RETRY["Retry / circuit breaking / controlled fallback"]
+        M_LIMITER["Rate limiter Worker / Durable Object"]
     end
-    
-    A --> B
-    B1 --> F
-    B2 --> B5
-    B3 --> B5
-    B4 --> F
-    
-    B5 --> C
-    B3 --> D
-    B3 --> D1
-    B3 --> D2
-    
-    B1 --> F
-    B2 --> F
-    B3 --> F
-    B1 --> G3
-    B3 --> G1
-    B3 --> G2
-    
-    B1 --> K
-    B1 --> E
-    A --> E
-    
-    style B5 fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px
-    style B9 fill:#ff8787,stroke:#c92a2a,stroke-width:2px
-    style B6 fill:#ffd43b,stroke:#fab005,stroke-width:2px
-    style B7 fill:#ffd43b,stroke:#fab005,stroke-width:2px
+
+    subgraph INFRASTRUCTURE["Storage and background maintenance"]
+        D_DATABASE["D1: users / sessions / messages / settings"]
+        D_OBJECTS["R2: document sources / images / avatars"]
+        D_KV["KV: session state / cache / temporary state"]
+        D_QUEUE["Cleanup queue / delayed retries"]
+        D_CLEANUP["Cleanup consumer / referenced-resource checks"]
+        D_CRON["Scheduled maintenance / retry scheduling"]
+        D_DLQ["Dead-letter queue / manual investigation"]
+    end
+
+    subgraph EXTERNAL["External identity, data and model providers"]
+        X_MODELS["Gemini / OpenAI-compatible / Claude services"]
+        X_WEB["Brave web and image search"]
+        X_ACADEMIC["Semantic Scholar / OpenAlex"]
+        X_IMAGE["Image generation providers"]
+        X_IDENTITY["Google / GitHub OAuth"]
+        X_EMAIL["Email delivery service"]
+    end
+
+    S_MODELS -.-> F_HISTORY
+    S_MODELS -.-> M_ADAPTER
+    S_ATTACH -.-> F_IMAGES
+    S_ATTACH -.-> B_STORAGE
+    S_SYNC -.-> F_SYNC
+    S_SYNC -.-> B_STORAGE
+
+    %% Solid links: main data/request paths; dotted links: coordination or lifecycle work.
+    F_ENTRY --> F_COMPOSER
+    F_I18N -.-> F_ENTRY
+    F_ENTRY -.-> F_EXTENSIONS
+    F_NATIVE -.-> F_COMPOSER
+    F_KEYBOARD --> F_VIEWPORT
+    F_VIEWPORT -.-> F_ENTRY
+    F_COMPOSER --> F_READERS
+    F_READERS --> F_WORKERS
+    F_READERS --> F_IMAGES
+    F_READERS --> F_DOC_PLAN
+    F_DOC_PLAN --> F_DOC_PROCESS
+    F_IMAGES --> F_VISION
+    F_DOC_PROCESS --> F_CONTEXT
+    F_DOC_PROCESS -.-> F_TRANSPORT
+    F_VISION -.-> F_TRANSPORT
+    F_VISION --> F_CONTEXT
+    F_COMPOSER --> F_CONTEXT
+    F_HISTORY --> F_CONTEXT
+    F_RETRIEVAL --> F_CONTEXT
+    F_BRIDGE --> F_HISTORY
+    F_CONTEXT --> F_ASSEMBLER --> F_TRANSPORT
+    F_TRANSPORT --> B_GATEWAY
+    F_RETRIEVAL --> B_GATEWAY
+    B_MODEL --> F_STREAM
+    F_STREAM --> F_MARKDOWN
+    F_MARKDOWN --> F_CHARTS
+    F_STREAM --> F_IMAGE_VIEW
+    F_CHARTS --> F_ENTRY
+    F_IMAGE_VIEW --> F_ENTRY
+    F_MARKDOWN --> F_EXPORT
+    F_MARKDOWN -.-> F_EXTENSIONS
+    F_STREAM --> F_CHAT
+    F_CHAT --> F_HISTORY
+    F_CHAT --> F_SYNC
+    F_SYNC <--> F_CACHE
+    F_IMAGES --> F_CACHE
+    F_PWA -.-> F_ENTRY
+    F_SYNC <--> B_GATEWAY
+    B_GATEWAY --> B_SESSION
+    B_GATEWAY --> B_AUTH
+    B_SESSION --> B_DATA
+    B_SESSION --> B_MODEL
+    B_SESSION --> B_SEARCH
+    B_SESSION --> B_RESOURCE
+    B_AUTH --> X_IDENTITY
+    B_AUTH --> X_EMAIL
+    B_AUTH --> D_DATABASE
+    B_SESSION --> D_KV
+    B_DATA --> B_STORAGE
+    B_STORAGE --> D_DATABASE
+    B_STORAGE --> D_OBJECTS
+    B_MODEL --> M_ADAPTER
+    M_ADAPTER --> M_RETRY
+    M_KEYS -.-> M_RETRY
+    M_LIMITER -.-> B_MODEL
+    M_RETRY --> X_MODELS
+    B_SEARCH --> X_WEB
+    B_SEARCH --> X_ACADEMIC
+    B_RESOURCE --> X_IMAGE
+    B_RESOURCE --> D_OBJECTS
+    B_SEARCH -.-> D_KV
+    B_STORAGE -.-> D_QUEUE
+    D_CRON --> D_QUEUE
+    D_QUEUE --> D_CLEANUP
+    D_CLEANUP --> D_DATABASE
+    D_CLEANUP --> D_OBJECTS
+    D_CLEANUP -.-> D_DLQ
+
+    classDef frontend fill:#e8f1ff,stroke:#5276a7,color:#172b4d
+    classDef backend fill:#fff3dc,stroke:#ab7d32,color:#49330d
+    classDef storage fill:#edf3ef,stroke:#63836c,color:#203e2b
+    classDef external fill:#f0eafa,stroke:#8466a6,color:#39244f
+    classDef shared fill:#eff3f7,stroke:#748598,color:#25384b
+    classDef extension fill:#f7edf3,stroke:#ad6d91,color:#54243f
+    class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
+    class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
+    class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
+    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
+    class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
+    class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage
+    class X_MODELS,X_WEB,X_ACADEMIC,X_IMAGE,X_IDENTITY,X_EMAIL external
+    class F_EXTENSIONS extension
+    class S_MODELS,S_ATTACH,S_SYNC shared
 ```
 
 ### 🧩 프론트엔드 스택
@@ -287,9 +382,8 @@ graph TB
 - **수식 렌더링**: KaTeX
 - **차트**: Mermaid, Vega-Lite
 - **파일 파싱**: mammoth (Word), PDF.js, xlsx, pptx2html
-- **음성 인식**: Web Speech API
 - **스토리지**: IndexedDB + localStorage
-- **인증**: JWT 기반 인증, OAuth 2.0 지원 (Google, GitHub)
+- **인증**: 서버 세션과 OAuth 2.0 통합 (Google, GitHub)
 - **보안**: MFA/TOTP 지원, 백업 코드 포함
 
 ### 💾 클라이언트 측 처리
@@ -334,13 +428,13 @@ graph TB
 
 **Cloudflare D1 (SQLite)**
 - 완전한 사용자 인증 시스템, 여러 로그인 방법 지원:
-  - 안전한 bcrypt 해시를 사용한 이메일/비밀번호
+  - 안전한 PBKDF2 해시를 사용한 이메일/비밀번호
   - OAuth 2.0 통합 (Google, GitHub)
   - 익명 사용을 위한 게스트 모드
 - 다중 인증 (MFA) 지원:
   - TOTP 인증 앱 통합
   - 백업 코드 생성 및 관리
-- 상태 비저장 인증 및 다중 장치 로그인을 위한 JWT 세션 관리
+- 서버 세션 기록으로 만료, 무효화 및 다중 기기 로그인을 관리
 - 이메일 인증을 통한 비밀번호 재설정 흐름
 - 쿼리 및 복구 지원이 있는 채팅 기록 영구 저장
 - 사용자 구성 및 기본 설정 관리
@@ -375,7 +469,7 @@ graph TB
 
 **검색 및 콘텐츠**
 - **Brave Search API**: 고품질 웹 검색 결과를 제공하여 AI 컨텍스트 이해 향상
-- **GNews API**: 최신 정보 쿼리를 지원하는 실시간 뉴스 통합
+- **학술 정보원**: 현재 전체 서비스는 Semantic Scholar와 OpenAlex를 통합
 
 **이미지 생성**
 - **pollinations.ai**: 여러 예술적 스타일을 지원하는 고성능 이미지 생성 서비스
@@ -451,7 +545,7 @@ API 키 얻기: [Google AI Studio](https://aistudio.google.com/api-keys)
 
 ### 사전 요구사항
 
-- Node.js 18+
+- Node.js **^20.19.0 || >=22.12.0**
 - npm 또는 yarn
 - Gemini API 키 (선택사항, 최상의 경험을 위해 권장)
 
@@ -578,15 +672,15 @@ npx cap open android
   - 이메일 인증을 통한 안전한 비밀번호 재설정
 - **추적 없음**: 개인정보 보호 우선 설계
 - **오픈 소스**: 투명하고 감사 가능한 코드
-- **API 키 보안**: 사용자 API 키가 암호화되어 안전하게 저장됩니다
+- **API 키 처리**: 키는 민감한 설정입니다. 공개 빌드 변수나 커밋에 포함하지 마세요
 
-🧠 **모든 처리는 로컬 또는 설정된 API 키를 통해 수행됩니다 — 동의 없이 데이터가 장치를 떠나지 않습니다.**
+🧠 **로컬 분석, 모델 요청과 클라우드 동기화는 별도 작업입니다. 네트워크 기능에서는 내용이 기기 밖으로 전송됩니다.**
 
 ---
 
 ## 📄 라이선스
 
-이 프로젝트는 [MIT License](LICENSE) 하에 라이선스되어 있습니다.
+이 프로젝트는 [MIT License](../LICENSE) 하에 라이선스되어 있습니다.
 
 Copyright (c) 2025 diandiancha
 

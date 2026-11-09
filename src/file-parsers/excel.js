@@ -1,22 +1,9 @@
 import { readFileHeader, isZipHeader } from './media-utils.js';
+import { runParseTask, runParserWorker, throwIfParseAborted, reportParseProgress } from './parse-task.js';
 
 export function createExcelReader({ loadScript, getToastMessage }) {
 
     const DEFAULT_MAX_FILE_BYTES = 20 * 1024 * 1024;
-    const DEFAULT_PARSE_TIMEOUT_MS = 8000;
-
-    const runWithTimeout = async (promise, timeoutMs, timeoutMessage) => {
-        if (!timeoutMs || timeoutMs <= 0) return promise;
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-        });
-        try {
-            return await Promise.race([promise, timeoutPromise]);
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    };
 
     const guardExcelFile = async (file) => {
         if (!file) return;
@@ -32,12 +19,28 @@ export function createExcelReader({ loadScript, getToastMessage }) {
         }
     };
 
-    const readExcelFile = async (file) => {
+    const canUseExcelParserWorker = () => typeof Worker !== 'undefined';
+
+    const parseExcelInWorker = (file, signal) => runParserWorker(file,
+        () => new Worker(new URL('../worker-parsers/excel-parser-worker.js', import.meta.url)), signal, {
+            filename: file?.name || '',
+            labels: { worksheet: getToastMessage('fileProcessing.worksheet'), maxColumns: 100 }
+        });
+
+    const parseExcelFile = async (file, options, signal) => {
+        if (options.disableParserWorker !== true && canUseExcelParserWorker()) {
+            try {
+                const payload = await parseExcelInWorker(file, signal);
+                return payload.text || '';
+            } catch (_) {
+                throwIfParseAborted(signal);
+            }
+        }
+
         await loadScript('/libs/xlsx.full.min.js', 'XLSX');
+        throwIfParseAborted(signal);
 
-        await guardExcelFile(file);
-
-        return await runWithTimeout(new Promise((resolve, reject) => {
+        return await new Promise((resolve, reject) => {
             const maxColumns = 100;
             const extension = file?.name?.split('.').pop()?.toLowerCase();
 
@@ -67,10 +70,21 @@ export function createExcelReader({ loadScript, getToastMessage }) {
                         });
                     }
                 });
+                reportParseProgress(signal);
                 return allMarkdown;
             };
 
             const reader = new FileReader();
+            const onAbort = () => {
+                reader.onload = null;
+                reader.onerror = null;
+                reader.onloadend = null;
+                signal.removeEventListener('abort', onAbort);
+                reader.abort();
+                reject(signal.reason);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            reader.onloadend = () => signal.removeEventListener('abort', onAbort);
 
             reader.onload = function (event) {
                 const data = new Uint8Array(event.target.result);
@@ -196,8 +210,19 @@ export function createExcelReader({ loadScript, getToastMessage }) {
             };
 
             reader.onerror = reject;
-            reader.readAsArrayBuffer(file);
-        }), DEFAULT_PARSE_TIMEOUT_MS, getToastMessage('fileManagement.parseTimeout') || 'File parse timeout.');
+            try {
+                reader.readAsArrayBuffer(file);
+            } catch (error) {
+                signal.removeEventListener('abort', onAbort);
+                reject(error);
+            }
+        });
+    };
+
+    const readExcelFile = async (file, options = {}) => {
+        await guardExcelFile(file);
+        return await runParseTask(signal => parseExcelFile(file, options, signal),
+            file, options, getToastMessage('fileManagement.parseTimeout'));
     };
 
     return { readExcelFile };

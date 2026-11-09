@@ -587,8 +587,11 @@ html.keyboard-is-open {
     overscroll-behavior: none;
 }
 
-body.keyboard-is-open {
+html.kb-regime-native body.keyboard-is-open {
     --safe-area-inset-bottom: 0px;
+}
+
+body.keyboard-is-open {
     overflow: hidden !important;
     overscroll-behavior: none;
 }

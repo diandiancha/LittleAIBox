@@ -1,0 +1,111 @@
+:root {
+    --keyboard-height: 0px;
+    --browser-visual-viewport-top: 0px;
+    --browser-visual-viewport-height: 100dvh;
+    --keyboard-transition-duration: 280ms;
+    --keyboard-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+    .app-container,
+    .cross-chat-page {
+        min-height: min(240px, 100%);
+    }
+}
+
+/* ---------- 原生 regime ---------- */
+
+html.kb-regime-native .app-container {
+    bottom: var(--keyboard-height, 0px);
+    will-change: bottom;
+    transition:
+        opacity 0.3s ease-in,
+        bottom var(--keyboard-transition-duration) var(--keyboard-transition-easing),
+        height var(--keyboard-transition-duration) var(--keyboard-transition-easing),
+        top var(--keyboard-transition-duration) var(--keyboard-transition-easing);
+}
+
+html.kb-regime-native .cross-chat-page {
+    transition:
+        transform 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+        opacity 0.3s ease,
+        height var(--keyboard-transition-duration) var(--keyboard-transition-easing),
+        top var(--keyboard-transition-duration) var(--keyboard-transition-easing);
+}
+
+/* ---------- 浏览器 regime ---------- */
+
+@media (max-width: 640px), (pointer: coarse) {
+    html:not(.kb-regime-native) .app-container {
+        top: 0;
+        bottom: 0;
+        height: auto;
+        transition: opacity 0.3s ease-in;
+    }
+}
+
+html:not(.kb-regime-native) .browser-viewport-managed.app-container,
+html:not(.kb-regime-native) .browser-viewport-managed.cross-chat-page {
+    bottom: auto;
+    height: var(--browser-visual-viewport-height, 100dvh);
+    min-height: min(
+        240px,
+        var(--browser-visual-viewport-height, 100dvh)
+    );
+    padding-top: 0;
+    padding-bottom: 0;
+    transition: none;
+}
+
+html:not(.kb-regime-native) .browser-viewport-managed.app-container {
+    top: var(--browser-visual-viewport-top, 0px);
+    translate: none;
+}
+
+html:not(.kb-regime-native) .browser-viewport-managed.cross-chat-page {
+    top: var(--browser-visual-viewport-top, 0px);
+    translate: none;
+}
+
+html:not(.kb-regime-native) .browser-viewport-managed.cross-chat-modal-host {
+    position: fixed;
+    inset: auto 0;
+    top: var(--browser-visual-viewport-top, 0px);
+    translate: none;
+    height: var(--browser-visual-viewport-height, 100dvh);
+}
+
+html:not(.kb-regime-native)
+.browser-viewport-managed
+.cross-chat-composer textarea {
+    transition: none;
+}
+
+html:not(.kb-regime-native).kb-source-virtual-keyboard
+body.keyboard-is-open
+.cross-chat-page.modal-open:not(.browser-viewport-managed) {
+    bottom: auto;
+    height: var(--browser-layout-viewport-height, 100dvh);
+}
+
+/* ---------- 两个 regime 共用 ---------- */
+
+html.keyboard-is-open {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+html.kb-regime-native body.keyboard-is-open {
+    --safe-area-inset-bottom: 0px;
+}
+
+body.keyboard-is-open {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --keyboard-transition-duration: 0ms;
+    }
+}

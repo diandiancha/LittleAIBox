@@ -25,6 +25,8 @@ A clear and concise description of what you expected to happen.
 
 ## 📸 Screenshots
 
+For rendering bugs, include the original Markdown/Mermaid/Vega input as text, not only a screenshot. For parser bugs, attach a minimal sanitized sample if possible. Remove API keys, private messages and personal data.
+
 If applicable, add screenshots to help explain your problem.
 
 ## 🌐 Environment

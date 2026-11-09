@@ -17,6 +17,8 @@ Este proyecto está construido utilizando **Google Gemini API** para interaccion
 
 </div>
 
+> **Alcance y actualización:** este documento describe las funciones y la arquitectura del proyecto completo. El repositorio publica una selección del frontend, sin servidores, pagos, reglas comerciales ni credenciales. La versión 3.1.0 actualiza diagramas, fórmulas, Workers de documentos y teclado. El análisis local y el envío al modelo son operaciones distintas. Consulte el [README inglés](../README.md) para los contratos y requisitos actualizados.
+
 ---
 
 > 🎓 Este proyecto está desarrollado con fines educativos y de investigación.  
@@ -77,9 +79,8 @@ LittleAIBox es perfecto para:
 > - Navegación de línea de tiempo de conversación
 > - Gestión de claves API duales con balanceo de carga inteligente
 > - Parámetros AI personalizables y preajustes de tareas
-> - Soporte de entrada por voz
 
-> A diferencia de las aplicaciones de IA tradicionales, LittleAIBox se ejecuta localmente, asegurando que tus archivos y mensajes nunca abandonen tu dispositivo. Enfatiza la privacidad con rotación inteligente de claves API, proporciona acceso global estable y permite parámetros personalizados de IA para optimizar tu experiencia de chat. Los usuarios pueden optar por registrarse para sincronización en la nube, pero la plataforma funciona completamente sin una cuenta y no expone tu ubicación u origen de solicitud. LittleAIBox es de código abierto, ligero y diseñado para usuarios que valoran la privacidad, el control y la libertad.
+> Los documentos se analizan y muestran en el navegador. Los mensajes y las funciones de nube pueden enviar el contenido seleccionado al servicio configurado y al proveedor del modelo. El análisis local no implica inferencia sin conexión.
 
 > *[Ver en Product Hunt →](https://www.producthunt.com/products/littleaibox)*
 
@@ -137,7 +138,6 @@ LittleAIBox es perfecto para:
   - **Modo de Búsqueda**: Integración de búsqueda web en tiempo real para información actualizada
   - **Modo de Investigación**: Investigación académica impulsada por la API de Semantic Scholar - busca y cita automáticamente artículos académicos relevantes, estructura respuestas con formato Abstract/Introducción/Métodos/Resultados/Discusión/Conclusión, y proporciona citas en el texto [1], [2]...
   - **Modo de Generación de Imágenes**: Creación de imágenes impulsada por IA
-- **Entrada por Voz**: Soporte de entrada de voz a texto (mejor en Chrome de escritorio)
 - **Parámetros AI Personalizables**: Ajusta el comportamiento de la IA con:
   - Prompts del sistema para personalización de roles
   - Control de temperatura (creatividad vs. consistencia)
@@ -187,90 +187,185 @@ LittleAIBox es perfecto para:
 ### 🏗️ Diagrama del Sistema
 
 ```mermaid
-graph TB
-    subgraph "Capa de Cliente"
-        A[Vite + Tailwind + Capacitor]
-        H[Procesamiento del Lado del Cliente]
-        I[Análisis PPTX, PDF, DOCX, XLSX]
-        J[IndexedDB + localStorage]
-        A --> H
-        H --> I
-        H --> J
-    end
-    
-    subgraph "Backend - Cloudflare Pages"
-        B[Puerta de Enlace API]
-        B1[Manejador de Autenticación]
-        B2[Manejador de Chat]
-        B3[Manejador de API]
-        B4[Manejador de Compartir]
-        B --> B1
-        B --> B2
-        B --> B3
-        B --> B4
-        
-        subgraph "Gestión de API Empresarial"
-            B5[Pool de Claves API]
-            B6[Verificación de Salud]
-            B7[Cortacircuitos]
-            B8[Administrador de Reintentos]
-            B9[Degradación de 4 Niveles]
-            B5 --> B6
-            B6 --> B7
-            B7 --> B8
-            B8 --> B9
+flowchart TB
+    %% The complete project is shown; the public frontend snapshot is partial.
+    subgraph FRONTEND["Complete frontend: Web / PWA / Capacitor; public snapshot is partial"]
+        direction TB
+        subgraph INTERACTION["Interaction and platform adapters"]
+            F_ENTRY["Application entry / routing / settings"]
+            F_COMPOSER["Composer / attachments / mode selection"]
+            F_KEYBOARD["Native and browser keyboard drivers"]
+            F_VIEWPORT["Viewport sampling / scroll anchoring"]
+            F_I18N["Locales / themes / resource loading"]
+            F_NATIVE["Native bridge / files / sharing / updates"]
         end
-        
-        B2 --> B5
-        B3 --> B5
+        subgraph DOCUMENTS["Document and multimodal processing"]
+            F_READERS["PDF / Office / text readers"]
+            F_WORKERS["PDF / spreadsheet Workers and fallback"]
+            F_IMAGES["Image blobs / hashes / CID references"]
+            F_DOC_PLAN["Document intent / task routing / chunks"]
+            F_DOC_PROCESS["Summary / retrieval / code structure"]
+            F_VISION["Relevant image selection / visual review"]
+        end
+        subgraph ORCHESTRATION["Request and retrieval orchestration"]
+            F_HISTORY["Conversation history / context budget"]
+            F_RETRIEVAL["Search / research planning and evidence"]
+            F_CONTEXT["Document / image / conversation context"]
+            F_ASSEMBLER["Messages / model parameters / request IDs"]
+            F_TRANSPORT["Request transport / cancellation / errors"]
+        end
+        subgraph PRESENTATION["Streaming and productivity"]
+            F_STREAM["Response stream / pacing / incremental DOM"]
+            F_MARKDOWN["Markdown / highlighting / math protection"]
+            F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
+            F_IMAGE_VIEW["CID resolution / generated image layout"]
+            F_EXPORT["Word / Excel / PPT / PDF export"]
+            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+        end
+        subgraph CLIENT_STATE["Conversation and local state"]
+            F_CHAT["Conversations / turns / message identity"]
+            F_SYNC["Save queue / sync state / remote changes"]
+            F_CACHE["IndexedDB / cache policy / eviction"]
+            F_PWA["Service Worker / PWA cache and updates"]
+            F_BRIDGE["Parent-child conversation context bridge"]
+        end
     end
-    
-    subgraph "Servicios Externos"
-        C[Gemini API]
-        D[Brave Search API]
-        D1[GNews API]
-        D2[pollinations.ai]
+
+    subgraph SHARED["Frontend/backend contracts: shared-runtime"]
+        S_MODELS["Model metadata / request and context policy"]
+        S_ATTACH["Image protocol / attachment hashes and persistence"]
+        S_SYNC["Conversation / turn order and sync state"]
     end
-    
-    subgraph "Infraestructura Cloudflare"
-        E[Cloudflare R2<br/>Almacenamiento de Objetos]
-        F[Cloudflare D1<br/>Base de Datos SQLite]
-        G1[Cloudflare KV<br/>Uso de Invitados]
-        G2[Cloudflare KV<br/>Caché de Proxy]
-        G3[Cloudflare KV<br/>Caché de Sesión]
+
+    subgraph SERVICE["Cloudflare Pages Functions: backend source not included"]
+        B_GATEWAY["Unified entry / version checks / routing"]
+        B_SESSION["Sessions / visitor identity / access control"]
+        B_AUTH["Email login / OAuth / MFA / password flows"]
+        B_DATA["Conversation / turn / attachment / share APIs"]
+        B_MODEL["Model requests / tools / streamed responses"]
+        B_SEARCH["Web / image / academic retrieval"]
+        B_RESOURCE["Image generation / resource proxying"]
+        B_STORAGE["Message commits / titles / attachment lifecycle"]
     end
-    
-    subgraph "Correo y Almacenamiento"
-        K[Resend API<br/>Servicio de Correo]
-        L[Avatar y Archivos<br/>Almacenamiento R2]
+
+    subgraph MODEL_RELIABILITY["Model integration and reliability responsibilities"]
+        M_ADAPTER["Model catalog / parameters / provider adapters"]
+        M_KEYS["User keys / server pools / health statistics"]
+        M_RETRY["Retry / circuit breaking / controlled fallback"]
+        M_LIMITER["Rate limiter Worker / Durable Object"]
     end
-    
-    A --> B
-    B1 --> F
-    B2 --> B5
-    B3 --> B5
-    B4 --> F
-    
-    B5 --> C
-    B3 --> D
-    B3 --> D1
-    B3 --> D2
-    
-    B1 --> F
-    B2 --> F
-    B3 --> F
-    B1 --> G3
-    B3 --> G1
-    B3 --> G2
-    
-    B1 --> K
-    B1 --> E
-    A --> E
-    
-    style B5 fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px
-    style B9 fill:#ff8787,stroke:#c92a2a,stroke-width:2px
-    style B6 fill:#ffd43b,stroke:#fab005,stroke-width:2px
-    style B7 fill:#ffd43b,stroke:#fab005,stroke-width:2px
+
+    subgraph INFRASTRUCTURE["Storage and background maintenance"]
+        D_DATABASE["D1: users / sessions / messages / settings"]
+        D_OBJECTS["R2: document sources / images / avatars"]
+        D_KV["KV: session state / cache / temporary state"]
+        D_QUEUE["Cleanup queue / delayed retries"]
+        D_CLEANUP["Cleanup consumer / referenced-resource checks"]
+        D_CRON["Scheduled maintenance / retry scheduling"]
+        D_DLQ["Dead-letter queue / manual investigation"]
+    end
+
+    subgraph EXTERNAL["External identity, data and model providers"]
+        X_MODELS["Gemini / OpenAI-compatible / Claude services"]
+        X_WEB["Brave web and image search"]
+        X_ACADEMIC["Semantic Scholar / OpenAlex"]
+        X_IMAGE["Image generation providers"]
+        X_IDENTITY["Google / GitHub OAuth"]
+        X_EMAIL["Email delivery service"]
+    end
+
+    S_MODELS -.-> F_HISTORY
+    S_MODELS -.-> M_ADAPTER
+    S_ATTACH -.-> F_IMAGES
+    S_ATTACH -.-> B_STORAGE
+    S_SYNC -.-> F_SYNC
+    S_SYNC -.-> B_STORAGE
+
+    %% Solid links: main data/request paths; dotted links: coordination or lifecycle work.
+    F_ENTRY --> F_COMPOSER
+    F_I18N -.-> F_ENTRY
+    F_ENTRY -.-> F_EXTENSIONS
+    F_NATIVE -.-> F_COMPOSER
+    F_KEYBOARD --> F_VIEWPORT
+    F_VIEWPORT -.-> F_ENTRY
+    F_COMPOSER --> F_READERS
+    F_READERS --> F_WORKERS
+    F_READERS --> F_IMAGES
+    F_READERS --> F_DOC_PLAN
+    F_DOC_PLAN --> F_DOC_PROCESS
+    F_IMAGES --> F_VISION
+    F_DOC_PROCESS --> F_CONTEXT
+    F_DOC_PROCESS -.-> F_TRANSPORT
+    F_VISION -.-> F_TRANSPORT
+    F_VISION --> F_CONTEXT
+    F_COMPOSER --> F_CONTEXT
+    F_HISTORY --> F_CONTEXT
+    F_RETRIEVAL --> F_CONTEXT
+    F_BRIDGE --> F_HISTORY
+    F_CONTEXT --> F_ASSEMBLER --> F_TRANSPORT
+    F_TRANSPORT --> B_GATEWAY
+    F_RETRIEVAL --> B_GATEWAY
+    B_MODEL --> F_STREAM
+    F_STREAM --> F_MARKDOWN
+    F_MARKDOWN --> F_CHARTS
+    F_STREAM --> F_IMAGE_VIEW
+    F_CHARTS --> F_ENTRY
+    F_IMAGE_VIEW --> F_ENTRY
+    F_MARKDOWN --> F_EXPORT
+    F_MARKDOWN -.-> F_EXTENSIONS
+    F_STREAM --> F_CHAT
+    F_CHAT --> F_HISTORY
+    F_CHAT --> F_SYNC
+    F_SYNC <--> F_CACHE
+    F_IMAGES --> F_CACHE
+    F_PWA -.-> F_ENTRY
+    F_SYNC <--> B_GATEWAY
+    B_GATEWAY --> B_SESSION
+    B_GATEWAY --> B_AUTH
+    B_SESSION --> B_DATA
+    B_SESSION --> B_MODEL
+    B_SESSION --> B_SEARCH
+    B_SESSION --> B_RESOURCE
+    B_AUTH --> X_IDENTITY
+    B_AUTH --> X_EMAIL
+    B_AUTH --> D_DATABASE
+    B_SESSION --> D_KV
+    B_DATA --> B_STORAGE
+    B_STORAGE --> D_DATABASE
+    B_STORAGE --> D_OBJECTS
+    B_MODEL --> M_ADAPTER
+    M_ADAPTER --> M_RETRY
+    M_KEYS -.-> M_RETRY
+    M_LIMITER -.-> B_MODEL
+    M_RETRY --> X_MODELS
+    B_SEARCH --> X_WEB
+    B_SEARCH --> X_ACADEMIC
+    B_RESOURCE --> X_IMAGE
+    B_RESOURCE --> D_OBJECTS
+    B_SEARCH -.-> D_KV
+    B_STORAGE -.-> D_QUEUE
+    D_CRON --> D_QUEUE
+    D_QUEUE --> D_CLEANUP
+    D_CLEANUP --> D_DATABASE
+    D_CLEANUP --> D_OBJECTS
+    D_CLEANUP -.-> D_DLQ
+
+    classDef frontend fill:#e8f1ff,stroke:#5276a7,color:#172b4d
+    classDef backend fill:#fff3dc,stroke:#ab7d32,color:#49330d
+    classDef storage fill:#edf3ef,stroke:#63836c,color:#203e2b
+    classDef external fill:#f0eafa,stroke:#8466a6,color:#39244f
+    classDef shared fill:#eff3f7,stroke:#748598,color:#25384b
+    classDef extension fill:#f7edf3,stroke:#ad6d91,color:#54243f
+    class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
+    class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
+    class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
+    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
+    class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
+    class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage
+    class X_MODELS,X_WEB,X_ACADEMIC,X_IMAGE,X_IDENTITY,X_EMAIL external
+    class F_EXTENSIONS extension
+    class S_MODELS,S_ATTACH,S_SYNC shared
 ```
 
 ### 🧩 Stack de Frontend
@@ -287,9 +382,8 @@ graph TB
 - **Renderizado de Matemáticas**: KaTeX
 - **Gráficos**: Mermaid, Vega-Lite
 - **Análisis de Archivos**: mammoth (Word), PDF.js, xlsx, pptx2html
-- **Reconocimiento de Voz**: Web Speech API
 - **Almacenamiento**: IndexedDB + localStorage
-- **Autenticación**: Autenticación basada en JWT con soporte OAuth 2.0 (Google, GitHub)
+- **Autenticación**: Sesiones del servidor y OAuth 2.0 (Google, GitHub)
 - **Seguridad**: Soporte MFA/TOTP con códigos de respaldo
 
 ### 💾 Procesamiento del Lado del Cliente
@@ -334,13 +428,13 @@ Aunque estoy comprometido con la transparencia, el backend permanece cerrado por
 
 **Cloudflare D1 (SQLite)**
 - Sistema completo de autenticación de usuarios con múltiples métodos de inicio de sesión:
-  - Email/contraseña con hash seguro bcrypt
+  - Email/contraseña con hash seguro PBKDF2
   - Integración OAuth 2.0 (Google, GitHub)
   - Modo invitado para uso anónimo
 - Soporte de Autenticación Multi-Factor (MFA):
   - Integración de aplicación autenticadora TOTP
   - Generación y gestión de códigos de respaldo
-- Gestión de sesiones JWT para autenticación sin estado e inicio de sesión multi-dispositivo
+- Registros de sesión del servidor con caducidad, invalidación y acceso desde varios dispositivos
 - Flujo de restablecimiento de contraseña con verificación por email
 - Persistencia del historial de chat con soporte de consulta y recuperación
 - Gestión de configuración y preferencias del usuario
@@ -375,7 +469,7 @@ El sistema detecta y evita automáticamente restricciones regionales, claves inv
 
 **Búsqueda y Contenido**
 - **Brave Search API**: Resultados de búsqueda web de alta calidad para mejorar la comprensión del contexto de IA
-- **GNews API**: Integración de noticias en tiempo real para consultas de información más reciente
+- **Fuentes académicas**: El servicio completo actual integra Semantic Scholar y OpenAlex
 
 **Generación de Imágenes**
 - **pollinations.ai**: Servicio de generación de imágenes de alto rendimiento que admite múltiples estilos artísticos
@@ -451,7 +545,7 @@ Obtener Clave API: [Google AI Studio](https://aistudio.google.com/api-keys)
 
 ### Prerrequisitos
 
-- Node.js 18+ 
+- Node.js **^20.19.0 || >=22.12.0**
 - npm o yarn
 - Una clave API de Gemini (opcional, pero recomendada para la mejor experiencia)
 
@@ -578,15 +672,15 @@ Estoy trabajando activamente en:
   - Restablecimiento seguro de contraseña mediante verificación por email
 - **Sin Seguimiento**: Diseño priorizando privacidad
 - **Código Abierto**: Código transparente y auditable
-- **Seguridad de Claves API**: Las claves API de usuario se cifran y almacenan de forma segura
+- **Gestión de Claves API**: Son configuración sensible; no las incluya en variables públicas de compilación ni en commits
 
-🧠 **Todo el procesamiento ocurre localmente o a través de tu clave API configurada — ningún dato abandona tu dispositivo sin tu consentimiento.**
+🧠 **El análisis local, las solicitudes al modelo y la sincronización son operaciones distintas. Las funciones de red transmiten contenido fuera del dispositivo.**
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está licenciado bajo la [Licencia MIT](LICENSE).
+Este proyecto está licenciado bajo la [Licencia MIT](../LICENSE).
 
 Copyright (c) 2025 diandiancha
 

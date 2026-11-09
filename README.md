@@ -13,7 +13,7 @@
 
 [中文](docs/README.zh-CN.md) | [English](README.md) | [日本語](docs/README.ja.md) | [한국어](docs/README.ko.md) | [Español](docs/README.es.md) | [Français](docs/README.fr.md)
 
-This project is built using **Google Gemini API** for conversational AI interactions, providing an intelligent AI experience.
+LittleAIBox combines browser-side document processing, AI request orchestration and streamed rich-content rendering in a cross-platform application. Gemini is the original integration; the separately maintained service also supports additional model providers.
 
 </div>
 
@@ -22,6 +22,8 @@ This project is built using **Google Gemini API** for conversational AI interact
 > 🎓 This project is developed for educational and research purposes.  
 
 > 💼 Commercial deployments and premium services are operated separately by the author to ensure security and sustainability.
+
+> **Reading this project:** the feature overview and backend architecture below explain the complete system. This repository publishes a frontend snapshot and selected core mechanisms; backend source, payment processing, production credentials and commercial entitlement rules are not included. Architectural descriptions do not imply that those services are bundled here.
 
 ---
 
@@ -33,7 +35,7 @@ LittleAIBox is perfect for:
 - **Students & Researchers**: Analyze papers, presentations, and documents without leaving your browser
 - **Developers**: Get coding help with file context, code explanations, and technical assistance
 - **Content Creators**: Generate and edit markdown content with AI support
-- **Privacy-Conscious Users**: All processing happens locally; you control your data
+- **Privacy-Conscious Users**: Parse documents locally and understand which content is sent to a backend or model provider
 
 ---
 
@@ -51,25 +53,25 @@ LittleAIBox is perfect for:
 
 **What makes this project different?**
 
-| Feature | LittleAIBox | Others |
+| Capability | Mechanism | Execution boundary |
 |---------|-------------|--------|
-| File Processing | 📄 PPTX, DOCX, PDF, XLSX support | Limited or server-side only |
-| Privacy | 🔒 Client-side processing, no uploads | Often requires file uploads |
-| Offline Support | 📱 Full PWA, works offline | Limited offline capabilities |
-| Cross-Platform | 🌐 Web + PWA + Android native | Usually web or mobile only |
-| Framework | ⚡ Vanilla JS, zero bloat | Often React/Vue dependencies |
-| Regional Access | 🌍 Built-in service relay solution | May be regionally restricted |
-| **High Availability** | 🛡️ **Enterprise-grade API pool** with health checks & auto-failover | ❌ Single API dependency, prone to failure |
-| Open Source | ✅ 100% frontend open-source | Varies |
-| Cost | 💰 Use your own API key | Often subscription-based |
+| File Processing | 📄 PDF/Office readers, Worker and DOM paths | Browser; selected content can enter a model request |
+| Rich Rendering | 📐 Markdown, KaTeX, Mermaid and Vega | Browser; asynchronous rendering coordinated with chat scrolling |
+| Offline State | 📱 Service Worker and IndexedDB | Cached shell/local data; online inference remains service-backed |
+| Cross-Platform | 🌐 Web, PWA and Capacitor adapters | Native behavior requires a generated platform project and device checks |
+| Application Shell | ⚡ Vanilla JavaScript and Vite modules | Third-party libraries supply parsing and rendering capabilities |
+| Model Integration | 🔌 Context assembly and provider protocol adaptation | Frontend requests plus a compatible backend |
+| Failure Recovery | 🛡️ Key statistics, retry and circuit breaking | Separately maintained backend |
+| Open Source | ✅ Selected frontend snapshot under MIT | Full-system architecture documented; backend implementation omitted |
+| User Keys | 🔑 BYOK configuration | Provider and compatible-backend requirements still apply |
 
-**Choose LittleAIBox if you want**: Maximum privacy, offline-first design, zero framework dependencies, and complete control over your AI conversations.
+**Engineering focus**: inspectable browser processing, explicit service boundaries, streamed rich-content rendering and cross-platform interaction.
 
 ### 🌟 Official Description
 
 > **Private, Global AI Chat & Integration Platform**
 >
-> LittleAIBox is a full-stack, cross-platform Gemini AI chat application (built with Vite/Capacitor/Cloudflare) featuring an intelligent API pooling and proxy backend that bypasses regional restrictions for stable global access. Key features include:
+> LittleAIBox is a full-stack, cross-platform AI chat application built with Vite, Capacitor and Cloudflare. Its frontend handles local document processing and rich-content interaction; the service layer handles model integration, retrieval, sessions and failure recovery. Key features include:
 >
 > - Client-side parsing (PDF/DOCX/PPTX support)
 > - Mermaid/LaTeX/Vega-Lite rendering with chart export
@@ -77,13 +79,14 @@ LittleAIBox is perfect for:
 > - Conversation timeline navigation
 > - Dual API key management with intelligent load balancing
 > - Customizable AI parameters and task presets
-> - Voice input support
 >
-> Unlike traditional AI applications, LittleAIBox runs locally, ensuring your files and messages never leave your device. It emphasizes privacy with intelligent API key rotation, provides stable global access, and allows custom AI parameters to optimize your chat experience. Users can optionally register for cloud sync, but the platform works fully without an account and doesn't expose your location or request origin. LittleAIBox is open-source, lightweight, and designed for users who value privacy, control, and freedom.
+> The browser parses documents, stores local state and renders streamed responses. Selected message and attachment content is sent to the configured backend and model provider when a request is made; account and cloud features use their corresponding services. This separation keeps local document processing inspectable while the service layer manages model access, retries and synchronization.
 >
 > *[View on Product Hunt →](https://www.producthunt.com/products/littleaibox)*
 
 ### 📱 Application Screenshots
+
+These screenshots illustrate earlier interface versions; individual controls may differ from the current public snapshot.
 
 #### Main Page
 
@@ -106,25 +109,26 @@ LittleAIBox is perfect for:
 - **Rich Media**: Support for images and Markdown files
 - **Plain Text Files**: Support for various text file formats
 - **File Viewer**: Built-in file viewer with syntax highlighting for code files, image preview, and rich text rendering
-- **Zero Upload Required**: All file processing happens client-side for maximum privacy
+- **Local Parsing**: Extract document content in the browser; sending it to a model or cloud storage is a separate network operation
+- **Parser Lifecycle**: Worker parsing where supported, main-thread fallback, progress reporting and progress-aware idle timeouts
 
 ### 🔐 **Privacy-First Design**
 - **No Registration Required**: Start using immediately without creating an account
 - **Multiple Login Options**: Email/password, OAuth (Google, GitHub), or guest mode
 - **Multi-Factor Authentication (MFA)**: Optional TOTP authenticator app support with backup codes
 - **Dual API Key Management**: Configure two API keys with intelligent mixed mode (load balancing) or single mode (backup fallback)
-- **Self-Configure API Key**: Use your own Gemini API key, with complete data control
+- **Self-Configure API Key**: Configure your own provider key through the compatible service's settings interface
 - **Flexible Storage**: Registered users' API keys are persisted for multi-device sync; guest users' keys are stored locally only and automatically cleared on page refresh, ensuring privacy
 - **Password Management**: Secure password reset via email verification
 - **Custom Avatar**: Upload and manage your profile avatar
 
 ### 🌍 **Universal Access**
-- **Regional Restriction Solution**: Built-in service relay routing to bypass geographical limitations
-- **Offline-First**: Full PWA support with offline capabilities
-- **Cross-Platform**: Works seamlessly on Web, PWA, and Android native apps
+- **Service Routing**: Configurable relay integration; availability depends on backend, provider and network conditions
+- **Offline State**: Cache the PWA shell and local data; model inference and search require online services
+- **Cross-Platform**: Web/PWA interface and Capacitor adapters; native behavior needs device validation
 
 ### 💬 **Advanced Markdown Rendering**
-- **Code Highlighting**: Support for 40+ programming languages
+- **Code Highlighting**: Bundled highlight.js support for common programming languages
 - **Mathematical Expressions**: Beautiful math rendering with KaTeX
 - **Diagrams**: Interactive Mermaid diagram support with PNG/SVG export
 - **Data Visualization**: Vega-Lite chart rendering with interactive charts and PNG export
@@ -135,9 +139,8 @@ LittleAIBox is perfect for:
 ### 🛠️ **Advanced AI Features**
 - **Multiple Interaction Modes**: 
   - **Search Mode**: Real-time web search integration for up-to-date information
-  - **Research Mode**: Academic research powered by Semantic Scholar API - automatically searches and cites relevant academic papers, structures responses with Abstract/Introduction/Methods/Results/Discussion/Conclusion format, and provides in-text citations [1], [2]...
+  - **Research Mode**: Academic retrieval and source citations through a compatible service. The current complete service integrates Semantic Scholar and OpenAlex; this snapshot retains its existing research interface.
   - **Image Generation Mode**: AI-powered image creation
-- **Voice Input**: Speech-to-text input support (best on Chrome desktop)
 - **Custom AI Parameters**: Fine-tune AI behavior with:
   - System prompts for role customization
   - Temperature control (creativity vs. consistency)
@@ -156,11 +159,13 @@ LittleAIBox is perfect for:
 
 ### 📌 **Open-Source Scope**
 - **Frontend-Only Package**: This repository ships the open-source frontend; subscription/payment backends are omitted
+- **Service-Backed Features**: Login, cloud sync, search and model replies require compatible services; a frontend control does not supply its backend
+- **Snapshot Scope**: Canvas and entertainment modules from the separately maintained application are outside this core refresh
 
 ### 🌐 **Multi-Language Support**
-- **6 Languages**: Chinese (Simplified/Traditional), English, Japanese, Korean, Spanish, French
+- **7 Locale Catalogs**: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Spanish and French
 - **Smart Detection**: Automatic language detection based on browser settings
-- **Optimized Loading**: Intelligent translation caching for instant language switching
+- **Translation Caching**: Reuse loaded locale resources to reduce repeated requests
 
 ### 🎨 **Beautiful UI/UX**
 - **Dark/Light Mode**: Seamless theme switching
@@ -176,101 +181,202 @@ LittleAIBox is perfect for:
 
 ### 🛡️ **Enterprise-Grade Backend Architecture**
 - **Elastic API Key Pool**: Production-grade multi-key rotation with automatic load balancing
-- **Health Check & Circuit Breaker**: Real-time monitoring and intelligent failover protection
-- **4-Tier Smart Degradation**: Seamless service continuity even under failures
-- **High Availability**: Guaranteed uptime with automatic regional restriction bypass
+- **Key Health & Circuit Breaker**: Track request success/failure statistics and isolate failed keys; this is not a continuous upstream probe or response-quality evaluator
+- **Controlled Fallback**: Separate key selection, operating modes and failure recovery instead of treating them as a universal four-step pipeline
+- **Failure Recovery**: Retry, circuit breaking and permitted fallback paths reduce transient failures; availability is not guaranteed
 
 ---
 
 ## 🏗️ Architecture
 
+The diagram describes the complete application's frontend, service and infrastructure layers. Backend nodes explain the engineering design; their implementation and production configuration are maintained separately from this public checkout.
+
+The expanded diagram groups the complete project's responsibilities: interaction/platform adapters, document processing, request orchestration, streaming, state synchronization, shared frontend/backend contracts, backend APIs, model reliability and background maintenance. Solid links show main request/data paths; dotted links show coordination, intermediate processing or lifecycle work. These are not separate deployments or steps every request executes.
+
+Colors identify frontend, backend, shared contracts, storage/maintenance and external-provider responsibilities; pink marks extensions outside this refresh. The public snapshot synchronizes selected core mechanisms, not every current frontend module or its latest session/context implementation. Backend implementations and production configuration remain separate.
+
 ### 🏗️ System Diagram
 
 ```mermaid
-graph TB
-    subgraph "Client Layer"
-        A[Vite + Tailwind + Capacitor]
-        H[Client-Side Processing]
-        I[PPTX, PDF, DOCX, XLSX Parsing]
-        J[IndexedDB + localStorage]
-        A --> H
-        H --> I
-        H --> J
-    end
-    
-    subgraph "Backend - Cloudflare Pages"
-        B[API Gateway]
-        B1[Auth Handler]
-        B2[Chat Handler]
-        B3[API Handler]
-        B4[Share Handler]
-        B --> B1
-        B --> B2
-        B --> B3
-        B --> B4
-        
-        subgraph "Enterprise API Management"
-            B5[APIKeyPool]
-            B6[Health Check]
-            B7[Circuit Breaker]
-            B8[Retry Manager]
-            B9[4-Tier Degradation]
-            B5 --> B6
-            B6 --> B7
-            B7 --> B8
-            B8 --> B9
+flowchart TB
+    %% The complete project is shown; the public frontend snapshot is partial.
+    subgraph FRONTEND["Complete frontend: Web / PWA / Capacitor; public snapshot is partial"]
+        direction TB
+        subgraph INTERACTION["Interaction and platform adapters"]
+            F_ENTRY["Application entry / routing / settings"]
+            F_COMPOSER["Composer / attachments / mode selection"]
+            F_KEYBOARD["Native and browser keyboard drivers"]
+            F_VIEWPORT["Viewport sampling / scroll anchoring"]
+            F_I18N["Locales / themes / resource loading"]
+            F_NATIVE["Native bridge / files / sharing / updates"]
         end
-        
-        B2 --> B5
-        B3 --> B5
+        subgraph DOCUMENTS["Document and multimodal processing"]
+            F_READERS["PDF / Office / text readers"]
+            F_WORKERS["PDF / spreadsheet Workers and fallback"]
+            F_IMAGES["Image blobs / hashes / CID references"]
+            F_DOC_PLAN["Document intent / task routing / chunks"]
+            F_DOC_PROCESS["Summary / retrieval / code structure"]
+            F_VISION["Relevant image selection / visual review"]
+        end
+        subgraph ORCHESTRATION["Request and retrieval orchestration"]
+            F_HISTORY["Conversation history / context budget"]
+            F_RETRIEVAL["Search / research planning and evidence"]
+            F_CONTEXT["Document / image / conversation context"]
+            F_ASSEMBLER["Messages / model parameters / request IDs"]
+            F_TRANSPORT["Request transport / cancellation / errors"]
+        end
+        subgraph PRESENTATION["Streaming and productivity"]
+            F_STREAM["Response stream / pacing / incremental DOM"]
+            F_MARKDOWN["Markdown / highlighting / math protection"]
+            F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
+            F_IMAGE_VIEW["CID resolution / generated image layout"]
+            F_EXPORT["Word / Excel / PPT / PDF export"]
+            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+        end
+        subgraph CLIENT_STATE["Conversation and local state"]
+            F_CHAT["Conversations / turns / message identity"]
+            F_SYNC["Save queue / sync state / remote changes"]
+            F_CACHE["IndexedDB / cache policy / eviction"]
+            F_PWA["Service Worker / PWA cache and updates"]
+            F_BRIDGE["Parent-child conversation context bridge"]
+        end
     end
-    
-    subgraph "External Services"
-        C[Gemini API]
-        D[Brave Search API]
-        D1[GNews API]
-        D2[pollinations.ai]
+
+    subgraph SHARED["Frontend/backend contracts: shared-runtime"]
+        S_MODELS["Model metadata / request and context policy"]
+        S_ATTACH["Image protocol / attachment hashes and persistence"]
+        S_SYNC["Conversation / turn order and sync state"]
     end
-    
-    subgraph "Cloudflare Infrastructure"
-        E[Cloudflare R2<br/>Object Storage]
-        F[Cloudflare D1<br/>SQLite Database]
-        G1[Cloudflare KV<br/>Guest Usage]
-        G2[Cloudflare KV<br/>Proxy Cache]
-        G3[Cloudflare KV<br/>Session Cache]
+
+    subgraph SERVICE["Cloudflare Pages Functions: backend source not included"]
+        B_GATEWAY["Unified entry / version checks / routing"]
+        B_SESSION["Sessions / visitor identity / access control"]
+        B_AUTH["Email login / OAuth / MFA / password flows"]
+        B_DATA["Conversation / turn / attachment / share APIs"]
+        B_MODEL["Model requests / tools / streamed responses"]
+        B_SEARCH["Web / image / academic retrieval"]
+        B_RESOURCE["Image generation / resource proxying"]
+        B_STORAGE["Message commits / titles / attachment lifecycle"]
     end
-    
-    subgraph "Email & Storage"
-        K[Resend API<br/>Email Service]
-        L[Avatar & Files<br/>R2 Storage]
+
+    subgraph MODEL_RELIABILITY["Model integration and reliability responsibilities"]
+        M_ADAPTER["Model catalog / parameters / provider adapters"]
+        M_KEYS["User keys / server pools / health statistics"]
+        M_RETRY["Retry / circuit breaking / controlled fallback"]
+        M_LIMITER["Rate limiter Worker / Durable Object"]
     end
-    
-    A --> B
-    B1 --> F
-    B2 --> B5
-    B3 --> B5
-    B4 --> F
-    
-    B5 --> C
-    B3 --> D
-    B3 --> D1
-    B3 --> D2
-    
-    B1 --> F
-    B2 --> F
-    B3 --> F
-    B1 --> G3
-    B3 --> G1
-    B3 --> G2
-    
-    B1 --> K
-    B1 --> E
-    A --> E
-    
-    style B5 fill:#ff6b6b,stroke:#c92a2a,stroke-width:3px
-    style B9 fill:#ff8787,stroke:#c92a2a,stroke-width:2px
-    style B6 fill:#ffd43b,stroke:#fab005,stroke-width:2px
-    style B7 fill:#ffd43b,stroke:#fab005,stroke-width:2px
+
+    subgraph INFRASTRUCTURE["Storage and background maintenance"]
+        D_DATABASE["D1: users / sessions / messages / settings"]
+        D_OBJECTS["R2: document sources / images / avatars"]
+        D_KV["KV: session state / cache / temporary state"]
+        D_QUEUE["Cleanup queue / delayed retries"]
+        D_CLEANUP["Cleanup consumer / referenced-resource checks"]
+        D_CRON["Scheduled maintenance / retry scheduling"]
+        D_DLQ["Dead-letter queue / manual investigation"]
+    end
+
+    subgraph EXTERNAL["External identity, data and model providers"]
+        X_MODELS["Gemini / OpenAI-compatible / Claude services"]
+        X_WEB["Brave web and image search"]
+        X_ACADEMIC["Semantic Scholar / OpenAlex"]
+        X_IMAGE["Image generation providers"]
+        X_IDENTITY["Google / GitHub OAuth"]
+        X_EMAIL["Email delivery service"]
+    end
+
+    S_MODELS -.-> F_HISTORY
+    S_MODELS -.-> M_ADAPTER
+    S_ATTACH -.-> F_IMAGES
+    S_ATTACH -.-> B_STORAGE
+    S_SYNC -.-> F_SYNC
+    S_SYNC -.-> B_STORAGE
+
+    %% Solid links: main data/request paths; dotted links: coordination or lifecycle work.
+    F_ENTRY --> F_COMPOSER
+    F_I18N -.-> F_ENTRY
+    F_ENTRY -.-> F_EXTENSIONS
+    F_NATIVE -.-> F_COMPOSER
+    F_KEYBOARD --> F_VIEWPORT
+    F_VIEWPORT -.-> F_ENTRY
+    F_COMPOSER --> F_READERS
+    F_READERS --> F_WORKERS
+    F_READERS --> F_IMAGES
+    F_READERS --> F_DOC_PLAN
+    F_DOC_PLAN --> F_DOC_PROCESS
+    F_IMAGES --> F_VISION
+    F_DOC_PROCESS --> F_CONTEXT
+    F_DOC_PROCESS -.-> F_TRANSPORT
+    F_VISION -.-> F_TRANSPORT
+    F_VISION --> F_CONTEXT
+    F_COMPOSER --> F_CONTEXT
+    F_HISTORY --> F_CONTEXT
+    F_RETRIEVAL --> F_CONTEXT
+    F_BRIDGE --> F_HISTORY
+    F_CONTEXT --> F_ASSEMBLER --> F_TRANSPORT
+    F_TRANSPORT --> B_GATEWAY
+    F_RETRIEVAL --> B_GATEWAY
+    B_MODEL --> F_STREAM
+    F_STREAM --> F_MARKDOWN
+    F_MARKDOWN --> F_CHARTS
+    F_STREAM --> F_IMAGE_VIEW
+    F_CHARTS --> F_ENTRY
+    F_IMAGE_VIEW --> F_ENTRY
+    F_MARKDOWN --> F_EXPORT
+    F_MARKDOWN -.-> F_EXTENSIONS
+    F_STREAM --> F_CHAT
+    F_CHAT --> F_HISTORY
+    F_CHAT --> F_SYNC
+    F_SYNC <--> F_CACHE
+    F_IMAGES --> F_CACHE
+    F_PWA -.-> F_ENTRY
+    F_SYNC <--> B_GATEWAY
+    B_GATEWAY --> B_SESSION
+    B_GATEWAY --> B_AUTH
+    B_SESSION --> B_DATA
+    B_SESSION --> B_MODEL
+    B_SESSION --> B_SEARCH
+    B_SESSION --> B_RESOURCE
+    B_AUTH --> X_IDENTITY
+    B_AUTH --> X_EMAIL
+    B_AUTH --> D_DATABASE
+    B_SESSION --> D_KV
+    B_DATA --> B_STORAGE
+    B_STORAGE --> D_DATABASE
+    B_STORAGE --> D_OBJECTS
+    B_MODEL --> M_ADAPTER
+    M_ADAPTER --> M_RETRY
+    M_KEYS -.-> M_RETRY
+    M_LIMITER -.-> B_MODEL
+    M_RETRY --> X_MODELS
+    B_SEARCH --> X_WEB
+    B_SEARCH --> X_ACADEMIC
+    B_RESOURCE --> X_IMAGE
+    B_RESOURCE --> D_OBJECTS
+    B_SEARCH -.-> D_KV
+    B_STORAGE -.-> D_QUEUE
+    D_CRON --> D_QUEUE
+    D_QUEUE --> D_CLEANUP
+    D_CLEANUP --> D_DATABASE
+    D_CLEANUP --> D_OBJECTS
+    D_CLEANUP -.-> D_DLQ
+
+    classDef frontend fill:#e8f1ff,stroke:#5276a7,color:#172b4d
+    classDef backend fill:#fff3dc,stroke:#ab7d32,color:#49330d
+    classDef storage fill:#edf3ef,stroke:#63836c,color:#203e2b
+    classDef external fill:#f0eafa,stroke:#8466a6,color:#39244f
+    classDef shared fill:#eff3f7,stroke:#748598,color:#25384b
+    classDef extension fill:#f7edf3,stroke:#ad6d91,color:#54243f
+    class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
+    class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
+    class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
+    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
+    class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
+    class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage
+    class X_MODELS,X_WEB,X_ACADEMIC,X_IMAGE,X_IDENTITY,X_EMAIL external
+    class F_EXTENSIONS extension
+    class S_MODELS,S_ATTACH,S_SYNC shared
 ```
 
 ### 🧩 Frontend Stack
@@ -283,29 +389,46 @@ graph TB
 
 **Key Libraries**
 - **Markdown**: marked.js + DOMPurify
-- **Code Highlighting**: highlight.js (40+ languages)
+- **Code Highlighting**: highlight.js
 - **Math Rendering**: KaTeX
 - **Charts**: Mermaid, Vega-Lite
-- **File Parsing**: mammoth (Word), PDF.js, xlsx, pptx2html
-- **Speech Recognition**: Web Speech API
+- **File Parsing**: PDF.js, SheetJS/xlsx, JSZip/XML-based DOCX and PPTX readers, including Office math extraction
 - **Storage**: IndexedDB + localStorage
-- **Authentication**: JWT-based auth with OAuth 2.0 support (Google, GitHub)
+- **Authentication**: Server-side sessions with OAuth 2.0 integration (Google, GitHub)
 - **Security**: MFA/TOTP support with backup codes
 
 ### 💾 Client-Side Processing
 
 All file parsing and processing happens entirely in the browser:
-- **PPTX Parsing**: Full PowerPoint content extraction
+- **PPTX Parsing**: Extract supported slide text, tables, notes, images and Office math
 - **PDF Reading**: Text and metadata extraction
 - **Excel Processing**: Spreadsheet data parsing (.xlsx, .xls, .csv)
-- **Word Documents**: DOCX file parsing with formatting preservation
+- **Word Documents**: Extract supported paragraphs, tables, images and Office math into text/Markdown
 - **Image Handling**: Client-side image processing and base64 encoding
 
 ### Offline Support
 
 - **Service Worker**: Custom caching strategies
 - **IndexedDB**: Local chat history and settings storage
-- **Progressive Web App**: Installable and works offline
+- **Progressive Web App**: Installable application shell and local state; model inference and search require online services
+
+### 🔄 Core Execution Paths
+
+**Message submission → model reply.** The browser collects text, direct images and parsed-document references, prepares conversation context and sends a request through the service interface. The service layer handles session validation, provider adaptation and upstream requests. The browser consumes the response stream, updates the message and completes rich-content rendering. The frontend interface is public; the model service is not bundled here.
+
+**Document → usable context.** A reader checks the header and size. Spreadsheet and PDF readers use a Worker where supported, with main-thread fallback; DOCX/PPTX use DOM-based readers that periodically yield to the browser. Progress refreshes the idle deadline. Extracted text and images are separated: images use the existing local storage interface and content-hash/CID references. File-format resource guards are distinct from commercial quotas.
+
+**Markdown → formulas and diagrams.** Formula preprocessing respects fenced and inline code. Math placeholders protect formulas during Markdown parsing, then the math renderer restores and renders them. Mermaid/Vega renderers load on demand, normalize supported input artifacts and apply shared theme settings. The existing chat entry coordinates asynchronous rendering and scroll position.
+
+**Keyboard → viewport → reading position.** The controller selects a native or browser driver. Browser samples distinguish virtual-keyboard geometry, visual-viewport resizing and layout resizing; a keyboard session manages open/close state. Registered input surfaces receive geometry updates. The chat adapter preserves its bottom anchor or the user's reading position and releases listeners on cleanup.
+
+**Local state → optional cloud sync.** IndexedDB/localStorage preserve frontend data, while the existing retry queue tracks pending service operations. Persistence, caches and remote synchronization have different lifecycles. This release retains the public snapshot's storage/sync interfaces instead of importing the commercial application's newer session system.
+
+**Model failure → controlled recovery.** The complete service separates user-key selection, shared-key pooling, retry/circuit-breaker decisions and provider adaptation. The backend sections below explain those responsibilities without publishing credentials, production routing or commercial entitlement rules.
+
+### 📦 Public Frontend Core Refresh
+
+Version 3.1.0 updates selected Mermaid/Vega, math, document parser/Worker and keyboard mechanisms in the existing public application. It retains the older conversation/storage integration; it does not claim complete source or feature parity with the separately maintained service.
 
 ### 🛡️ Backend Architecture
 
@@ -322,25 +445,25 @@ While I'm committed to transparency, the backend remains closed-source for sever
 
 **What's transparent?**
 
-- ✅ All frontend code is open-source and MIT licensed
-- ✅ All API endpoints are public and well-documented
+- ✅ The published frontend snapshot is MIT licensed
+- ✅ Frontend service call sites are inspectable
 - ✅ You can inspect all network requests
 - ✅ Client-side processing is fully auditable
 - ✅ No hidden tracking or data collection
 
-**For developers:** The frontend code demonstrates all backend interactions, and you can build your own backend or self-host the entire stack. All APIs are public and stable.
+**For developers:** Frontend call sites show the service contracts expected by this snapshot. Self-hosting the complete system requires a compatible backend; this checkout does not provide backend source or promise a permanently stable public API.
 
 #### Core Database Layer
 
 **Cloudflare D1 (SQLite)**
 - Complete user authentication system with multiple login methods:
-  - Email/password with secure bcrypt hashing
+  - Email/password with secure PBKDF2 hashing
   - OAuth 2.0 integration (Google, GitHub)
   - Guest mode for anonymous usage
 - Multi-Factor Authentication (MFA) support:
   - TOTP authenticator app integration
   - Backup code generation and management
-- JWT session management for stateless authentication and multi-device login
+- Server-side session records support expiry, invalidation and multi-device login
 - Password reset flow with email verification
 - Chat history persistence with query and recovery support
 - User configuration and preference management
@@ -350,21 +473,21 @@ While I'm committed to transparency, the backend remains closed-source for sever
 This system features a production-grade, highly available API key management system:
 
 - **Multi-Key Rotation**: Intelligent management of multiple Gemini and Brave Search API keys with automatic load balancing
-- **Health Check Mechanism**: Real-time monitoring of each key's availability and response quality
+- **Health Statistics**: Estimate key health from request success/failure counts and track failure state
 - **Automatic Failover**: Seamless switch to backup keys when a key fails or hits rate limits
 - **Circuit Breaker Protection**: Prevents repeated requests to failed keys, protecting system resources
 - **Intelligent Retry Strategy**: Exponential backoff algorithm to maximize request success rates
 
 #### Core: Smart Failover & Degradation System
 
-Implemented a carefully designed four-tier intelligent degradation architecture, ensuring high availability and service continuity:
+Key source selection, operating mode and final fallback have distinct responsibilities. The following concepts describe those choices rather than four steps every request executes:
 
 1. **User Key Priority**: Prioritizes user-configured API keys
-2. **Hybrid Mode**: Intelligently supplements with server keys when needed
-3. **Single Key Mode**: Server key as backup solution
-4. **Server Fallback**: Final safeguard ensuring service continuity
+2. **Server Key Pool**: Select from configured shared keys when the service allows them
+3. **Retry & Isolation**: Classify failures, apply retry policy and isolate failed keys
+4. **Server Fallback**: A controlled final recovery path when the configured service permits it
 
-The system automatically detects and bypasses regional restrictions, invalid keys, network failures, and other issues, providing users with consistent and stable service.
+The system classifies failures and attempts permitted recovery paths. Provider outages, unavailable credentials and network restrictions can still cause a request to fail.
 
 #### Integrated Service Ecosystem
 
@@ -375,11 +498,11 @@ The system automatically detects and bypasses regional restrictions, invalid key
 
 **Search & Content**
 - **Brave Search API**: High-quality web search results to enhance AI context understanding
-- **GNews API**: Real-time news integration for latest information queries
+- **Academic Sources**: Semantic Scholar and OpenAlex integration in the current complete service
 
 **Image Generation**
-- **pollinations.ai**: High-performance image generation service supporting multiple artistic styles
-- Client-side proxy service for user privacy protection
+- **Image Providers**: The complete service includes model-based generation and a Pollinations route; available routes depend on deployment
+- Server-side generation/resource proxying; provider credentials are not included in the frontend repository
 
 **Cloud Storage**
 - **Cloudflare R2**: S3-compatible object storage for user avatars and attachments
@@ -424,6 +547,9 @@ LittleAIBox/
 │   ├── file-parsers/            # Upload/file parsing pipeline
 │   ├── file-export/             # DOCX/PDF/PPTX/XLSX export
 │   ├── rendering/               # Mermaid/Vega render adapters
+│   ├── mathrender/              # Formula preprocessing and code-fence handling
+│   ├── keyboard/                # Native/browser drivers and chat integration
+│   ├── worker-parsers/          # Document parser Workers
 │   └── floating-timeline/       # Timeline feature modules
 ├── public/                      # Static assets
 │   ├── locales/                 # i18n dictionaries
@@ -451,17 +577,17 @@ LittleAIBox/
 
 ### 📝 Usage Note
 
-**Usage Note**: We recommend configuring your own Gemini API key for the best experience. No registration needed - simply enter your API key in the settings page to get started.
+**Usage Note**: The official service and this source checkout have different setup requirements. Model replies, authentication, search and cloud sync require a compatible backend. Entering a provider key alone does not supply these endpoints.
 
 Get API Key: [Google AI Studio](https://aistudio.google.com/api-keys)
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 20.x at least 20.19, or 22.12+ (matching Vite's requirement)
 - npm or yarn
 - A Gemini API key (optional, but recommended for best experience)
 
-> **Note**: While the service can work with shared API keys, we strongly recommend using your own API key for better performance and privacy.
+> **Note**: Production shared keys and server implementations are not included. Local development no longer automatically forwards requests to the official production service.
 
 ### Installation
 
@@ -476,11 +602,18 @@ npm install
 # Start development server
 npm run dev
 
+# Run local core regression tests
+npm test
+
 # Build for production
 npm run build
 ```
 
 ### Configuration
+
+**Local source checkout:** copy `.env.example` to `.env.local`, set `VITE_API_BASE_URL` to your compatible backend's HTTP(S) origin, and restart Vite. Leave it empty for same-origin requests. Use an origin without a path, credentials, query or fragment. `VITE_*` values are public and must never contain secrets. A generic OpenAI-compatible model endpoint alone does not implement the authentication, attachment and conversation-storage APIs.
+
+The following account/key steps describe the official service or a compatible deployment:
 
 1. **Get Your API Key** (if you don't have one):
    - Visit [Google AI Studio](https://aistudio.google.com/api-keys)
@@ -514,6 +647,8 @@ npm run build
 - Open a new issue with your problem details
 
 ### Building for Mobile
+
+First build the web assets with `npm run build`. The Android platform project and release signing material are not included; generate your own platform project and use your own application identity/signing configuration. Native behavior needs device testing.
 
 ```bash
 # Add Android platform
@@ -561,7 +696,7 @@ I welcome contributions! Whether you're fixing bugs, adding features, or improvi
 
 ### Roadmap
 
-I'm actively working on:
+Potential contribution directions, subject to discussion and without a delivery commitment:
 
 - 🌐 iOS support (Capacitor)
 - 📊 More file format support
@@ -583,10 +718,10 @@ Have ideas? [Open an issue](https://github.com/diandiancha/LittleAIBox/issues) o
   - Optional MFA/TOTP for enhanced security
   - Secure password reset via email verification
 - **No Tracking**: Privacy-first design
-- **Open Source**: Transparent and auditable code
-- **API Key Security**: User API keys encrypted and stored securely
+- **Open Source**: The published frontend is inspectable; backend source is maintained separately
+- **API Key Handling**: Provider keys are sensitive configuration; never embed them in public build variables or commit them
 
-🧠 **All processing happens locally or through your configured API key — no data ever leaves your device without your consent.**
+🧠 **Local parsing, model requests and optional cloud sync are separate operations. Sending messages or using cloud features can transmit content to the configured service and provider; local parsing does not mean offline inference.**
 
 ---
 
