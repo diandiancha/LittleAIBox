@@ -1,16 +1,36 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { buildMermaidConfig, getAppFontFamily, isDarkThemeRoot } from './chart-theme-config.js';
+import { normalizeMermaidColorFormats } from './mermaid-color-normalizer.js';
+import { normalizeMermaidSourceArtifacts } from './mermaid-source-normalizer.js';
 
 export const MERMAID_SCRIPT_SOURCES = [
     '/libs/mermaid.min.js'
 ];
 const MERMAID_GLOBAL = 'mermaid';
+// Mermaid 会把 `#xxx;` 编码成 HTML 实体，只对 style/classDef 行豁免末尾分号，linkStyle 不在豁免内。
+const LINK_STYLE_COLOR_TERMINATOR = /^([ \t]*linkStyle\b[^\r\n]*#\w+)[ \t]*;[ \t]*$/gim;
+
+function stripLinkStyleColorTerminators(source) {
+    return String(source || '').replace(LINK_STYLE_COLOR_TERMINATOR, '$1');
+}
 const DEFAULT_DOWNLOAD_ICON_PATH = '<path d="M5 20h14a1 1 0 0 0 1-1v-2h-2v1H6v-1H4v2a1 1 0 0 0 1 1zm7-3 5-5h-3V4h-4v8H7l5 5z"/>';
 
 let mermaidInitPromise = null;
 let mermaidConfigured = false;
 let diagramIdCounter = 0;
 const pendingRenders = new Set();
+
+function isRenderableMermaidDefinition(definition) {
+    const text = String(definition || '');
+    if (!text.trim()) return false;
+    const withoutCleanableHtml = text
+        .replace(/<br\s*\/?>/gi, '')
+        .replace(/<\/?(?:div|p|section|article|pre|blockquote|ul|ol|li|table|tr|td|th)[^>]*>/gi, '')
+        .replace(/<\/?(?:span|strong|em|code|b|i|font|small|big|u|s|mark|sub|sup)[^>]*>/gi, '')
+        .replace(/<\/?[A-Za-z][A-Za-z0-9_]*_[A-Za-z0-9_]*>/g, '');
+    return !/(?:javascript\s*:|data\s*:\s*text\/html|<\s*\/?\s*[a-z][^>\n]*>|on[a-z]+\s*=)/i.test(withoutCleanableHtml);
+}
 
 function sanitizeMermaidSvg(svgText) {
     if (!svgText || typeof svgText !== 'string') return '';
@@ -24,6 +44,18 @@ function sanitizeMermaidSvg(svgText) {
     return svgText;
 }
 
+function normalizeMermaidDirectiveBlocks(definition) {
+    return String(definition || '').replace(/%%\{([\s\S]*?)\}%%/g, (match, body) => {
+        const compactBody = String(body || '')
+            .replace(/\r\n?/g, '\n')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .join(' ');
+        return `%%{${compactBody}}%%`;
+    });
+}
+
 function sanitizeMermaidDefinition(definition) {
     if (typeof definition !== 'string') {
         return '';
@@ -31,17 +63,20 @@ function sanitizeMermaidDefinition(definition) {
 
     const replacements = [
         { regex: /\r\n?/g, replacement: '\n' },
-        { regex: /<br\s*\/?>/gi, replacement: '\n' },
+        { regex: /<([A-Za-z][A-Za-z0-9_]*_[A-Za-z0-9_]*)>/g, replacement: '&lt;$1&gt;' },
+        { regex: /<br\s*\/?>/gi, replacement: '\\n' },
         { regex: /<\/?(?:div|p|section|article|pre|blockquote|ul|ol|li|table|tr|td|th)[^>]*>/gi, replacement: '\n' },
-        { regex: /<\/?(?:span|strong|em|code|b|i)[^>]*>/gi, replacement: '' },
+        { regex: /<\/?(?:span|strong|em|code|b|i|font|small|big|u|s|mark|sub|sup)[^>]*>/gi, replacement: '' },
         { regex: /&nbsp;/gi, replacement: ' ' }
     ];
 
-    let sanitized = definition;
+    let sanitized = normalizeMermaidDirectiveBlocks(definition);
     for (const { regex, replacement } of replacements) {
         sanitized = sanitized.replace(regex, replacement);
     }
-
+    sanitized = normalizeMermaidColorFormats(sanitized);
+    sanitized = normalizeMermaidDirectiveBlocks(sanitized);
+    sanitized = sanitized.replace(/<\/?[A-Za-z][^>\n]*>/g, '');
     sanitized = sanitized.replace(/\u00A0/g, ' ');
     sanitized = sanitized
         .replace(/[（]/g, '(')
@@ -57,12 +92,179 @@ function sanitizeMermaidDefinition(definition) {
         .replace(/[—]/g, '-');
     sanitized = sanitized.replace(/[ \t]+$/gm, '');
     sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
-
     return sanitized.trim();
 }
 
+function normalizeTimelineMermaidInput(definition) {
+    const raw = String(definition || '').replace(/\r\n?/g, '\n').trim();
+    if (!raw) return '';
+
+    const lines = raw.split('\n');
+    const firstNonEmpty = lines.find(line => String(line || '').trim()) || '';
+    if (!/^\s*timeline\b/i.test(firstNonEmpty)) return '';
+
+    // 针对节点的严格清洗（剔除容易引发 Timeline 解析崩溃的符号）
+    const sanitizeNodeText = (text) => String(text || '')
+        .replace(/[【】\[\]（()）《》<>]/g, ' ')
+        .replace(/[:;；]/g, ' ')
+        .replace(/->|=>|--\>|==\>/g, ' → ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+    const out = ['timeline'];
+    let hasTitle = false;
+    let hasSection = false;
+
+    const ensureSection = () => {
+        if (!hasSection) {
+            out.push(`  section Timeline`);
+            hasSection = true;
+        }
+    };
+
+    for (let i = 1; i < lines.length; i += 1) {
+        let line = lines[i].trim();
+        if (!line || line.startsWith('%%')) continue;
+
+        // 【修复点 1】：处理标题（极其宽容）
+        if (/^title\b/i.test(line)) {
+            const titleText = line.replace(/^title\s*/i, '');
+            // 标题不去括号，只把半角冒号转成全角避免误判
+            out.push(`  title ${titleText.replace(/:/g, '：')}`);
+            hasTitle = true;
+            continue;
+        }
+
+        // 处理分段（Section 仍建议清洗）
+        const sectionLine = line.match(/^section\s+(.+)$/i);
+        if (sectionLine) {
+            out.push(`  section ${sanitizeNodeText(sectionLine[1])}`);
+            hasSection = true;
+            continue;
+        }
+
+        // 【修复点 2】：节点处理前，保护时间：09:30 -> 09：30
+        line = line.replace(/\b(\d{1,2}):(\d{2})\b/g, '$1：$2');
+
+        let parts = line.split(':').map(s => s.trim());
+        while (parts.length > 0 && parts[0] === '') {
+            parts.shift();
+        }
+        if (parts.length === 0) continue;
+
+        parts = parts.map(sanitizeNodeText).filter(Boolean);
+        if (parts.length === 0) continue;
+
+        ensureSection();
+
+        if (parts.length === 1) {
+            const match = parts[0].match(/^(\d{1,2}：\d{2})\s+(.+)$/);
+            if (match) {
+                out.push(`    ${match[1]} : ${match[2]}`);
+            } else {
+                out.push(`    ${parts[0]}`);
+            }
+        } else {
+            const period = parts[0];
+            const event = parts.slice(1).join(' - ');
+            out.push(`    ${period} : ${event}`);
+        }
+    }
+
+    if (!hasTitle) {
+        out.splice(1, 0, '  title Timeline');
+    }
+
+    return out.join('\n');
+}
+
+function normalizeMindmapMermaidInput(definition) {
+    let raw = String(definition || '').replace(/\r\n?/g, '\n').trim();
+    if (!raw) return '';
+
+    if (/^```/m.test(raw)) {
+        raw = raw.replace(/^```\s*(?:mermaid|mindmap)\s*\n?/i, '');
+        raw = raw.replace(/^```\s*\n?/, '');
+        raw = raw.replace(/\n?```\s*$/i, '');
+    }
+
+    raw = raw
+        .replace(/<br\s*\/?>/gi, '\\n')
+        .replace(/<\/?(?:div|p|section|article|pre|blockquote|ul|ol|li|table|tr|td|th)[^>]*>/gi, '\n')
+        .replace(/<\/?(?:span|strong|em|code|b|i|font|small|big|u|s|mark|sub|sup)[^>]*>/gi, '')
+        .replace(/<\/?[A-Za-z][^>\n]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\u00A0/g, ' ');
+
+    const lines = raw.split('\n').map(line => line.replace(/[ \t]+$/g, ''));
+    const directiveIndex = lines.findIndex(line => /^\s*mindmap\b/i.test(line.trim()));
+    if (directiveIndex === -1) return '';
+
+    const firstContentIndex = lines.findIndex(line => {
+        const trimmed = line.trim();
+        return trimmed && !trimmed.startsWith('%%');
+    });
+    if (firstContentIndex !== directiveIndex) return '';
+
+    const preamble = lines
+        .slice(0, directiveIndex)
+        .filter(line => /^\s*%%/.test(line.trim()));
+    const out = [...preamble, 'mindmap'];
+
+    const normalizeMindmapNodeText = (text) => {
+        const classMatch = String(text || '').match(/^(.*?)(\s+:::[A-Za-z][A-Za-z0-9_-]*)$/);
+        let labelPart = classMatch ? classMatch[1] : String(text || '');
+        const classPart = classMatch ? classMatch[2] : '';
+        const shapeMatch = labelPart.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*(\(\(|\{\{|\(-|\)\)|\(|\[)([\s\S]*)(\)\)|\}\}|-\)|\(\(|\)|\])$/);
+        if (shapeMatch) {
+            const nodeId = shapeMatch[1];
+            const open = shapeMatch[2];
+            const descr = shapeMatch[3].replace(/:/g, '：');
+            const close = shapeMatch[4];
+            return `${nodeId}${open}${descr}${close}${classPart}`.trim();
+        }
+
+        labelPart = labelPart
+            .replace(/:/g, '：')
+            .replace(/\(/g, '（')
+            .replace(/\)/g, '）')
+            .replace(/\[/g, '［')
+            .replace(/\]/g, '］')
+            .replace(/\{/g, '｛')
+            .replace(/\}/g, '｝');
+        return `${labelPart}${classPart}`.trim();
+    };
+
+    for (let i = directiveIndex + 1; i < lines.length; i += 1) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('%%')) {
+            out.push(trimmed);
+            continue;
+        }
+        const indent = (line.match(/^\s*/) || [''])[0].replace(/\t/g, '  ');
+        out.push(`${indent}${normalizeMindmapNodeText(trimmed)}`);
+    }
+
+    return out.join('\n').trim();
+}
+
 function normalizeAndCorrectMermaid(definition) {
+    const normalizedMindmap = normalizeMindmapMermaidInput(definition);
+    if (normalizedMindmap) {
+        return { corrected: normalizedMindmap, skippedReason: null };
+    }
+
     let text = sanitizeMermaidDefinition(definition);
+    if (text.length > 50000) {
+        return { corrected: text, skippedReason: 'too-long-for-deep-normalization' };
+    }
+    const normalizedTimeline = normalizeTimelineMermaidInput(text);
+    if (normalizedTimeline) {
+        return { corrected: normalizedTimeline, skippedReason: null };
+    }
+
     text = text.replace(/\["([^"\n]*)"\]\s*(?:\n\s*)?(?:\(|\uFF08)([^)\uFF09\]]+)(?:\)|\uFF09)\s*"?\]?/g, (match, label, suffix) => {
         const escapedSuffix = suffix.replace(/>/g, '&gt;').replace(/</g, '&lt;');
         return `["${label} (${escapedSuffix})"]`;
@@ -125,7 +327,16 @@ function normalizeAndCorrectMermaid(definition) {
     const forceNewlineKeywords = (input, keywords) => {
         if (!input) return input;
         const re = new RegExp(`([^\\n])\\s+(${keywords.join('|')})(?=\\s|$)`, 'gi');
-        return input.replace(re, '$1\n$2');
+        return input.replace(re, (match, prev, keyword, offset, whole) => {
+            if (String(keyword || '').toLowerCase() === 'critical') {
+                const lineStart = whole.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+                const prefix = whole.slice(lineStart, offset + String(prev || '').length);
+                if (/classDef\s*$/i.test(prefix.trim())) {
+                    return `${prev} ${keyword}`;
+                }
+            }
+            return `${prev}\n${keyword}`;
+        });
     };
     text = forceNewlineKeywords(text, ['alt', 'else', 'end', 'opt', 'par', 'critical', 'break', 'loop', 'rect']);
     text = forceNewlineKeywords(text, ['activate', 'deactivate', 'participant', 'actor', 'autonumber', 'create', 'destroy', 'note', 'box']);
@@ -148,76 +359,100 @@ function normalizeAndCorrectMermaid(definition) {
     lines = lines.map(stripInlineComments);
     lines = lines.filter(line => !/^\s*```/u.test(line));
 
-    const splitCompositeEdges = (linesArr) => {
+    const repairSplitClassDefLines = (linesArr) => {
         const output = [];
-        const arrowRe = /(-->|==>|-\.->)/g;
-        const multiSepRe = /\s&\s/;
-        linesArr.forEach((line) => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('%%')) {
-                output.push(line);
-                return;
-            }
-            if (/^\s*(subgraph|end|classDef|class|style|linkStyle)\b/i.test(trimmed)) {
-                output.push(line);
-                return;
-            }
-            if (trimmed.includes('|')) {
-                output.push(line);
-                return;
-            }
-
-            const arrowMatches = trimmed.match(arrowRe);
-            if (!arrowMatches) {
-                output.push(line);
-                return;
-            }
-
-            if (arrowMatches.length === 1 && multiSepRe.test(trimmed)) {
-                const arrow = arrowMatches[0];
-                const parts = line.split(arrow);
-                if (parts.length === 2) {
-                    const left = parts[0].trim();
-                    const right = parts[1].trim();
-                    const leftParts = left.split('&').map(part => part.trim()).filter(Boolean);
-                    const rightParts = right.split('&').map(part => part.trim()).filter(Boolean);
-                    if (leftParts.length > 1 || rightParts.length > 1) {
-                        if (leftParts.length > 1 && rightParts.length > 1) {
-                            leftParts.forEach((l) => {
-                                rightParts.forEach((r) => output.push(`${l} ${arrow} ${r}`));
-                            });
-                        } else if (leftParts.length > 1) {
-                            leftParts.forEach((l) => output.push(`${l} ${arrow} ${right}`));
-                        } else if (rightParts.length > 1) {
-                            rightParts.forEach((r) => output.push(`${left} ${arrow} ${r}`));
-                        } else {
-                            output.push(line);
-                        }
-                        return;
-                    }
+        for (let i = 0; i < linesArr.length; i += 1) {
+            const current = String(linesArr[i] || '');
+            const trimmed = current.trim();
+            if (/^classDef\s*;?\s*$/i.test(trimmed)) {
+                const next = String(linesArr[i + 1] || '');
+                const nextTrimmed = next.trim();
+                const classDefBodyMatch = nextTrimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\s+(.+)$/);
+                if (classDefBodyMatch) {
+                    output.push(`classDef ${classDefBodyMatch[1]} ${classDefBodyMatch[2]}`.trim());
+                    i += 1;
+                    continue;
                 }
             }
-
-            if (arrowMatches.length >= 2) {
-                const parts = line.split(arrowRe).map(part => part.trim()).filter(Boolean);
-                if (parts.length >= 5) {
-                    let prev = parts[0];
-                    for (let i = 1; i < parts.length; i += 2) {
-                        const segArrow = parts[i];
-                        const next = parts[i + 1];
-                        if (!next) break;
-                        output.push(`${prev} ${segArrow} ${next}`);
-                        prev = next;
-                    }
-                    return;
-                }
-            }
-
-            output.push(line);
-        });
+            output.push(current);
+        }
         return output;
     };
 
+    const repairDanglingEdgeLines = (linesArr) => {
+        const output = [];
+        const edgeTailRe = /(?:-->|==>|-\.->|--x|o--|x--|--o|<-->|<-.->|->|<-)\s*$/;
+        const targetHeadRe = /^\s*[A-Za-z][A-Za-z0-9_:-]*(?:\s*(?:\[|\(|\{|:::).*)?$/;
+        for (let i = 0; i < linesArr.length; i += 1) {
+            const current = String(linesArr[i] || '');
+            const trimmed = current.trim();
+            if (trimmed && !trimmed.startsWith('%%') && edgeTailRe.test(trimmed)) {
+                const next = String(linesArr[i + 1] || '');
+                const nextTrimmed = next.trim();
+                if (nextTrimmed && !nextTrimmed.startsWith('%%') && targetHeadRe.test(nextTrimmed)) {
+                    output.push(`${current.replace(/\s+$/, '')} ${nextTrimmed}`.trim());
+                    i += 1;
+                    continue;
+                }
+            }
+            output.push(current);
+        }
+        return output;
+    };
+
+    const splitCompositeEdges = (linesArr) => {
+        if (!Array.isArray(linesArr)) return linesArr;
+        const output = [];
+
+        for (const rawLine of linesArr) {
+            const line = String(rawLine ?? '');
+            const trimmed = line.trim();
+
+            if (
+                !trimmed ||
+                trimmed.startsWith('%%') ||
+                /^(classDef|class|style|linkStyle|subgraph|end)\b/i.test(trimmed)
+            ) {
+                output.push(line);
+                continue;
+            }
+
+            const match = line.match(
+                /^(\s*)([A-Za-z][A-Za-z0-9_:-]*)\s*(-->|==>|-\.->)\s*(\|[^|\n]*\|)?\s*([A-Za-z][A-Za-z0-9_:-]*(?:\s*&\s*[A-Za-z][A-Za-z0-9_:-]*)+)\s*(;?\s*)$/
+            );
+
+            if (!match) {
+                output.push(line);
+                continue;
+            }
+
+            const indent = match[1] || '';
+            const fromId = match[2] || '';
+            const edgeOp = match[3] || '-->';
+            const edgeLabel = match[4] ? ` ${match[4]} ` : ' ';
+            const targetsRaw = match[5] || '';
+            const tail = match[6] || '';
+
+            const targets = targetsRaw
+                .split('&')
+                .map((t) => t.trim())
+                .filter(Boolean);
+
+            if (targets.length <= 1) {
+                output.push(line);
+                continue;
+            }
+
+            targets.forEach((targetId) => {
+                output.push(`${indent}${fromId} ${edgeOp}${edgeLabel}${targetId}${tail}`);
+            });
+        }
+
+        return output;
+    };
+
+    lines = repairSplitClassDefLines(lines);
+    lines = repairDanglingEdgeLines(lines);
     lines = splitCompositeEdges(lines);
 
     const fixBrokenTargetNodeLine = (() => {
@@ -343,7 +578,101 @@ function normalizeAndCorrectMermaid(definition) {
         });
     };
 
-    lines = lines.map(mergeInlineLabelSuffix);
+    const fixBrokenInlineEdgeInjection = (line) => {
+        const fallbackLooseMatch = line.match(
+            /^(\s*)([A-Za-z][A-Za-z0-9_:-]*)\["([^"\n]*?)\[([\s\S]*?)\b([A-Za-z][A-Za-z0-9_:-]*)"\]\s*([^"\n][\s\S]*?)"\]\s*$/
+        );
+
+        const sanitizeLabel = (value) => String(value || '')
+            .replace(/`/g, '')
+            .replace(/[\[\]]/g, '')
+            .replace(/"/g, "'")
+            .replace(/>/g, '&gt;')
+            .replace(/</g, '&lt;')
+            .trim();
+
+        const normalizeEdgeLabel = (value) => String(value || '')
+            .replace(/[`"'[\]]/g, '')
+            .replace(/(?:\u2192|-->|->|=>)/g, '')
+            .replace(/^[|｜]+|[|｜]+$/g, '')
+            .replace(/^\s*[-=.]*/g, '')
+            .replace(/[-=.]*(?:>|＞)\s*$/g, '')
+            .replace(/[ \t]{2,}/g, ' ')
+            .trim();
+
+        if (fallbackLooseMatch) {
+            const indent = fallbackLooseMatch[1] || '';
+            const fromId = fallbackLooseMatch[2] || '';
+            const rawFromLabel = fallbackLooseMatch[3] || '';
+            const rawInjection = fallbackLooseMatch[4] || '';
+            const toId = fallbackLooseMatch[5] || '';
+            const rawToLabel = fallbackLooseMatch[6] || '';
+
+            const fromLabel = sanitizeLabel(rawFromLabel) || fromId;
+            const toLabel = sanitizeLabel(rawToLabel) || toId;
+            const edgeLabel = normalizeEdgeLabel(rawInjection);
+            const edgeOp = edgeLabel ? ` -->|${edgeLabel}| ` : ' --> ';
+            return `${indent}${fromId}["${fromLabel}"]${edgeOp}${toId}["${toLabel}"]`;
+        }
+
+        const baseMatch = line.match(
+            /^(\s*)([A-Za-z][A-Za-z0-9_:-]*)\["([^"\n]*?)\[\s*(?:[`'"\\\/]+)?\s*(?:\u2192|-->|->|=>)\s*(.+)$/
+        );
+        if (!baseMatch) return line;
+
+        const indent = baseMatch[1] || '';
+        const fromId = baseMatch[2] || '';
+        const rawFromLabel = baseMatch[3] || '';
+        const edgePayload = (baseMatch[4] || '').trim();
+
+        const edgePayloadMatch = edgePayload.match(
+            /^(?:[|｜]\s*([^|｜\n]+?)\s*[|｜]\s*)?([A-Za-z][A-Za-z0-9_:-]*)"\]\s*([^\n]*)$/
+        );
+        if (!edgePayloadMatch) return line;
+
+        const rawEdgeLabel = edgePayloadMatch[1] || '';
+        const toId = edgePayloadMatch[2] || '';
+        const rawTail = edgePayloadMatch[3] || '';
+
+        const fromLabel = sanitizeLabel(rawFromLabel) || fromId;
+        let toLabelRaw = rawTail
+            .replace(/^["'\]\s]+/, '')
+            .replace(/"\]\s*$/, '')
+            .replace(/\]\s*$/, '')
+            .trim();
+
+        let trailingEdge = '';
+        const trailingEdgeMatch = toLabelRaw.match(/\]\s*([A-Za-z][A-Za-z0-9_:-]*\s*(?:-->|==>|-\.->|--x|o--|x--|--o|<-->|<-.->|->|<-)\s*.+)$/);
+        if (trailingEdgeMatch) {
+            trailingEdge = trailingEdgeMatch[1];
+            toLabelRaw = toLabelRaw.slice(0, trailingEdgeMatch.index).trim();
+        } else {
+            const directTrailingEdgeMatch = toLabelRaw.match(/([A-Za-z][A-Za-z0-9_:-]*\s*(?:-->|==>|-\.->|--x|o--|x--|--o|<-->|<-.->|->|<-)\s*.+)$/);
+            if (directTrailingEdgeMatch && directTrailingEdgeMatch.index > 0) {
+                trailingEdge = directTrailingEdgeMatch[1];
+                toLabelRaw = toLabelRaw.slice(0, directTrailingEdgeMatch.index).trim();
+            }
+        }
+
+        const edgeLabel = normalizeEdgeLabel(rawEdgeLabel)
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const toLabel = sanitizeLabel(toLabelRaw) || toId;
+        const edgeOp = edgeLabel ? ` -->|${edgeLabel}| ` : ' --> ';
+        const fixedPrimary = `${indent}${fromId}["${fromLabel}"]${edgeOp}${toId}["${toLabel}"]`;
+        if (!trailingEdge) return fixedPrimary;
+        return `${fixedPrimary}\n${indent}${trailingEdge.trim()}`;
+    };
+
+    const fixBrokenEdgeLabelBrackets = (line) => {
+        let updated = line;
+        updated = updated.replace(/(--\|[^|\n]*?)\[(\|--?>)/g, '$1$2');
+        updated = updated.replace(/(==\|[^|\n]*?)\[(\|==>)/g, '$1$2');
+        updated = updated.replace(/(--\|[^|\n]*?)\](\|--?>)/g, '$1$2');
+        updated = updated.replace(/(==\|[^|\n]*?)\](\|==>)/g, '$1$2');
+        return updated;
+    };
 
     const normalizeClassDiagramLines = (line) => {
         if (/^\s*<>\s*$/.test(line)) {
@@ -352,8 +681,109 @@ function normalizeAndCorrectMermaid(definition) {
         return line;
     };
 
+    const normalizeClassDefIdentifiers = (linesArr) => {
+        const renameMap = new Map();
+        const isStateDiagram = linesArr.some(line => /^\s*stateDiagram(?:-v2)?\b/i.test(line));
+        const definedClassNames = new Set(linesArr.flatMap((line) => {
+            const match = String(line || '').match(/^\s*classDef\s+([^\s,;]+)/i);
+            return match ? [match[1].toLowerCase()] : [];
+        }));
+        let stateDefaultClassName = 'state_default';
+        let stateDefaultSuffix = 2;
+        while (definedClassNames.has(stateDefaultClassName.toLowerCase())) {
+            stateDefaultClassName = `state_default_${stateDefaultSuffix}`;
+            stateDefaultSuffix += 1;
+        }
+        const reserved = new Set([
+            'end', 'subgraph', 'classdef', 'class', 'style', 'linkstyle',
+            'flowchart', 'graph', 'sequencediagram', 'statediagram', 'classdiagram'
+        ]);
+
+        const normalizeName = (raw) => {
+            const cleaned = String(raw || '')
+                .trim()
+                .replace(/[^\p{L}\p{N}_-]+/gu, '_')
+                .replace(/^_+|_+$/g, '');
+            if (!cleaned) return 'node_class';
+            if (reserved.has(cleaned.toLowerCase())) return `${cleaned}_cls`;
+            return cleaned;
+        };
+
+        const normalizedLines = linesArr.map((line) => {
+            const match = line.match(/^(\s*classDef\s+)(.+)$/i);
+            if (!match) return line;
+
+            const prefix = match[1];
+            const body = match[2].trim();
+            if (!body) return line;
+
+            const tokens = body.split(/\s+/);
+            const styleStart = tokens.findIndex(token => token.includes(':'));
+            if (styleStart <= 0) return line;
+
+            const stylePart = tokens.slice(styleStart).join(' ');
+            const namePartRaw = tokens.slice(0, styleStart).join(' ').trim();
+            if (!namePartRaw) return line;
+
+            let rawNames = [];
+            if (namePartRaw.includes(',')) {
+                rawNames = namePartRaw.split(',').map(s => s.trim()).filter(Boolean);
+            } else if (tokens.slice(0, styleStart).length > 1) {
+                const mergedName = tokens.slice(0, styleStart).join('_');
+                rawNames = [mergedName];
+
+                const firstToken = tokens[0];
+                if (firstToken && firstToken !== mergedName) {
+                    renameMap.set(firstToken, mergedName);
+                }
+            } else {
+                rawNames = [namePartRaw];
+            }
+
+            const normalizedNames = rawNames.map((name) => {
+                const normalized = isStateDiagram && name.toLowerCase() === 'default'
+                    ? stateDefaultClassName
+                    : normalizeName(name);
+                if (normalized !== name) {
+                    renameMap.set(name, normalized);
+                }
+                return normalized;
+            });
+
+            return `${prefix}${normalizedNames.join(',')} ${stylePart}`;
+        });
+
+        const applyRenameToClassRef = (line) => {
+            let updated = line;
+            renameMap.forEach((toName, fromName) => {
+                const escaped = fromName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                updated = updated.replace(new RegExp(`:::\\s*${escaped}(?=\\b|\\s|$)`, 'g'), `:::${toName}`);
+                updated = updated.replace(new RegExp(`\\bclass\\s+([^\\n]*\\s)?${escaped}(?=\\s|,|$)`, 'g'), (m) => {
+                    return m.replace(new RegExp(`${escaped}(?=\\s|,|$)`), toName);
+                });
+            });
+            return updated;
+        };
+
+        const renamedLines = normalizedLines.map(applyRenameToClassRef);
+        if (!isStateDiagram) return renamedLines;
+
+        const classApplications = [];
+        const stabilizedLines = renamedLines.map((line) => {
+            const aliasClassMatch = line.match(/^(\s*state\s+"[^"]*"\s+as\s+([A-Za-z_]\w*))\s*:::\s*([A-Za-z_]\w*)\s*;?\s*$/i);
+            if (!aliasClassMatch) return line;
+
+            classApplications.push(`class ${aliasClassMatch[2]} ${aliasClassMatch[3]}`);
+            return aliasClassMatch[1];
+        });
+
+        return [...stabilizedLines, ...classApplications];
+    };
+
     const repairQuoteBracketArtifacts = (line) => {
         let updated = line;
+        updated = updated.replace(/\[""([^"\n]+)""\]/g, '["$1"]');
+        updated = updated.replace(/\{""([^"\n]+)""\}/g, '{"$1"}');
         updated = updated.replace(/\["\]([^"\n]+)"\]/g, '["$1"]');
         updated = updated.replace(/\["([^"\n\]]+)\["\]/g, '["$1"]');
         updated = updated.replace(/\{"]([^"\n]+)"\}/g, '{"$1"}');
@@ -366,7 +796,10 @@ function normalizeAndCorrectMermaid(definition) {
         updated = updated.replace(/^\s*subgraph\s+([A-Za-z0-9_:-]+)\s*\[([^\]]+)\]\s*$/i, 'subgraph "$2"');
         updated = updated.replace(/^(\s*[A-Za-z0-9_:-]+)\s+\[([^\]]+)\]\s*$/u, '$1["$2"]');
         updated = updated.replace(/--\|"\s*([^"\n]*?)\s*\|-->/g, '--|$1|-->');
-        updated = updated.replace(/([\p{L}\p{N}_:-]+)"([^"\n]+)"/gu, '$1["$2"]');
+        updated = updated.replace(
+            /(^|\s)([A-Za-z][A-Za-z0-9_:-]*)"([^"\n\[\]]+)"(?=\s*(?:$|-->|==>|-\.->|:::|,\s*|;))/g,
+            '$1$2["$3"]'
+        );
         updated = updated.replace(
             /([\]\)\}])\s*([A-Za-z][A-Za-z0-9_:-]*\s*(?:-->|==>|-\.->|--x|o--|x--|--o|<-->|<-.->|->|<-))/g,
             '$1\n$2'
@@ -479,6 +912,7 @@ function normalizeAndCorrectMermaid(definition) {
             const label = line
                 .slice(start + 1, end)
                 .replace(/\$/g, '＄')
+                .replace(/[\[\]]/g, '')
                 .replace(/\(/g, '（')
                 .replace(/\)/g, '）');
             result += label + '|';
@@ -489,32 +923,178 @@ function normalizeAndCorrectMermaid(definition) {
 
     const protectMathRegions = (line) => {
         const mathPlaceholders = [];
+        const makeMathToken = (kind, idx) =>
+            `__MERMAID_MATH_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}_${idx}__`;
         let safeText = line.replace(/\$\$([^$]+)\$\$/g, (match) => {
-            mathPlaceholders.push(match);
-            return `⟦MATHBLOCK${mathPlaceholders.length - 1}⟧`;
+            const token = makeMathToken('BLOCK', mathPlaceholders.length);
+            mathPlaceholders.push({ token, original: match, isInline: false });
+            return token;
         });
         safeText = safeText.replace(/\$([^$]+)\$/g, (match) => {
-            mathPlaceholders.push(match);
-            return `⟦MATHINLINE${mathPlaceholders.length - 1}⟧`;
+            const token = makeMathToken('INLINE', mathPlaceholders.length);
+            mathPlaceholders.push({ token, original: match, isInline: true });
+            return token;
         });
         return { safeText, mathPlaceholders };
     };
 
-    const restoreMathRegions = (line, mathPlaceholders) => {
+    const restoreMathRegions = (line, mathPlaceholders = []) => {
         let restored = line;
-        mathPlaceholders.forEach((original, idx) => {
-            restored = restored.replace(`⟦MATHBLOCK${idx}⟧`, original);
-
-            if (original.startsWith('$') && !original.startsWith('$$')) {
-                const converted = '$' + original;
+        mathPlaceholders.forEach((placeholder) => {
+            const token = placeholder?.token;
+            const original = placeholder?.original || '';
+            if (!token) return;
+            if (placeholder?.isInline && original.startsWith('$') && !original.startsWith('$$')) {
+                const converted = `$${original}`;
                 const finalConverted = converted.slice(0, -1) + '$$';
-                restored = restored.replace(`⟦MATHINLINE${idx}⟧`, finalConverted);
+                restored = restored.replace(token, finalConverted);
             } else {
-                restored = restored.replace(`⟦MATHINLINE${idx}⟧`, original);
+                restored = restored.replace(token, original);
             }
         });
         return restored;
     };
+
+    const normalizeNestedParenNodeLabels = (line) => {
+        const source = String(line || '');
+        let result = '';
+        let cursor = 0;
+
+        const isIdStart = (ch) => /[A-Za-z]/.test(ch || '');
+        const isIdPart = (ch) => /[A-Za-z0-9_:-]/.test(ch || '');
+
+        while (cursor < source.length) {
+            const ch = source[cursor];
+            const prev = cursor > 0 ? source[cursor - 1] : '';
+            if (!isIdStart(ch) || isIdPart(prev)) {
+                result += ch;
+                cursor += 1;
+                continue;
+            }
+
+            let idEnd = cursor + 1;
+            while (idEnd < source.length && isIdPart(source[idEnd])) {
+                idEnd += 1;
+            }
+
+            let parenStart = idEnd;
+            while (parenStart < source.length && /\s/.test(source[parenStart])) {
+                parenStart += 1;
+            }
+
+            if (source[parenStart] !== '(' || source[parenStart + 1] === '(') {
+                result += source.slice(cursor, idEnd);
+                cursor = idEnd;
+                continue;
+            }
+
+            let depth = 0;
+            let idx = parenStart;
+            let parenEnd = -1;
+            while (idx < source.length) {
+                if (source[idx] === '(') {
+                    depth += 1;
+                } else if (source[idx] === ')') {
+                    depth -= 1;
+                    if (depth === 0) {
+                        parenEnd = idx;
+                        break;
+                    }
+                }
+                idx += 1;
+            }
+
+            if (parenEnd === -1) {
+                result += source.slice(cursor, idEnd);
+                cursor = idEnd;
+                continue;
+            }
+
+            const rawLabel = source.slice(parenStart + 1, parenEnd);
+            if (!/[()]/.test(rawLabel)) {
+                result += source.slice(cursor, parenEnd + 1);
+                cursor = parenEnd + 1;
+                continue;
+            }
+
+            const safeLabel = rawLabel
+                .trim()
+                .replace(/^["']|["']$/g, '')
+                .replace(/"/g, "'")
+                .replace(/\(/g, '（')
+                .replace(/\)/g, '）');
+
+            result += `${source.slice(cursor, idEnd)}("${safeLabel}")`;
+            cursor = parenEnd + 1;
+        }
+
+        return result;
+    };
+
+    const normalizeMermaidInlineStructures = (line) => {
+        // 边文字不能吞掉完整箭头的 >，否则链式连线会被误改成带 | 的标签。
+        return line
+            .replace(
+                /(\b[A-Za-z][A-Za-z0-9_:-]*)[ \t]*--[ \t]*([^|<>\s-][^|<>\r\n-]*?)[ \t]*---[ \t]*(\b[A-Za-z][A-Za-z0-9_:-]*)/g,
+                '$1 -->|$2| $3'
+            )
+            .replace(/^\s*subgraph\s+""([^"]+)""\s*$/i, 'subgraph "$1"')
+            .replace(/^\s*subgraph\s+\[([^\]]+)\]\s*$/i, 'subgraph "$1"')
+            .replace(/^\s*subgraph\s+\w+\s+"([^"]+)"\s*$/i, 'subgraph "$1"')
+            .replace(/(\b[A-Za-z0-9_:-]+)\s*\(\s*(\[[^\]\n]+\])\s*\)/g, '$1$2')
+            .replace(/^(\s*)([A-Za-z0-9_:-]+)\[(?!")([^\]\n]+)\]/gm, '$1$2["$3"]')
+            .replace(/(\b[A-Za-z0-9_:-]+)\(\(\s*"?\s*\(?\s*"?([^"()\n]+?)"?\s*\)?\s*"?\s*\)\)/g, '$1(("$2"))')
+            .replace(/(\b[A-Za-z0-9_:-]+)\(\(\((?!")([^\)\n]+)\)\)\)/g, '$1((("$2")))')
+            .replace(/(\b[A-Za-z0-9_:-]+)\{\{\s*"{0,2}([^"\n]+?)"{0,2}\s*\}\}/g, '$1{"$2"}')
+            .replace(/(\b[A-Za-z0-9_:-]+)\{(?!")([^\}\n]+)\}/g, '$1{"$2"}')
+            .replace(/--[ \t]*([^|<>\s-][^|<>\r\n-]*?)[ \t]*-->/g, '--|$1|-->')
+            .replace(/--[ \t]*([^|<>\s-][^|<>\r\n-]*?)[ \t]*==>/g, '--|$1|==>')
+            .replace(/--\s*"\s*([^"]+?)\s*"\s*-->/g, '--|$1|-->')
+            .replace(/--\s*"\s*([^"]+?)\s*"\s*==>/g, '--|$1|==>')
+            .replace(/-\.\s*"([^"\n]+?)"\s*\.-\s*->/g, '-. "$1" .->')
+            .replace(/-\.\s*([^"\n]+?)\s*\.-\s*->/g, '-. $1 .->')
+            .replace(/\.\-\s*->/g, '.->')
+            .replace(/\|\s*"([^"\n]+?)"\s*\|/g, '|$1|')
+            .replace(/\["\(\s*"?([^"\n]+?)"?\s*\)"\]/g, '[($1)]')
+            .replace(/^\s*([A-Za-z0-9_:-]+\s*\[[^\]]+\])\s*:\s*$/g, '$1')
+            .replace(/[《》〈〉「」『』【】〔〕〖〗〘〙〚〛①②③④⑤⑥⑦⑧⑨⑩]/g, '')
+            .replace(/\)\s+:::/g, '):::')
+            .replace(/\]\s+:::/g, ']:::')
+            .replace(/\}\s+:::/g, '}:::')
+            .replace(/:::\s+/g, ':::')
+            .replace(/^(\s*subgraph\s+)"'([^'"]+)'"(\s*)$/gim, '$1"$2"$3')
+            .replace(/\['([^'"\]]+)"\]/g, '[$1]')
+            .replace(/\["([^'"\]]+)'\]/g, '[$1]');
+    };
+
+    const normalizeDirectionAliases = (line) => {
+        return line.replace(/^(\s*direction\s+)TD(\s*;?\s*)$/i, '$1TB$2');
+    };
+
+    const applyLineCleaners = (linesArr, cleaners) =>
+        linesArr.map((line) => cleaners.reduce((acc, cleaner) => cleaner(acc), line));
+
+    const preMathLineCleaners = [
+        mergeInlineLabelSuffix,
+        fixBrokenInlineEdgeInjection,
+        fixBrokenEdgeLabelBrackets
+    ];
+
+    const protectedLineCleaners = [
+        normalizeDirectionAliases,
+        normalizeSubgraphBrackets,
+        normalizePlainSubgraphTitle,
+        normalizeMermaidLine,
+        repairQuoteBracketArtifacts,
+        normalizeClassDiagramLines,
+        normalizeNestedParenNodeLabels,
+        normalizeMermaidInlineStructures,
+        sanitizeSubgraphTitle,
+        sanitizeQuotedNodeLabels,
+        sanitizeEdgeLabels
+    ];
+
+    lines = applyLineCleaners(lines, preMathLineCleaners);
 
     const allMathPlaceholders = [];
     lines = lines.map(line => {
@@ -523,41 +1103,8 @@ function normalizeAndCorrectMermaid(definition) {
         return safeText;
     });
 
-    lines = lines
-        .map(normalizeSubgraphBrackets)
-        .map(normalizePlainSubgraphTitle)
-        .map(normalizeMermaidLine)
-        .map(repairQuoteBracketArtifacts)
-        .map(normalizeClassDiagramLines);
-    lines = lines.map(line => line
-        .replace(/^\s*subgraph\s+""([^"]+)""\s*$/i, 'subgraph "$1"')
-        .replace(/^\s*subgraph\s+\[([^\]]+)\]\s*$/i, 'subgraph "$1"')
-        .replace(/^\s*subgraph\s+\w+\s+"([^"]+)"\s*$/i, 'subgraph "$1"')
-        .replace(/(\b[A-Za-z0-9_:-]+)\s*\(\s*(\[[^\]\n]+\])\s*\)/g, '$1$2')
-        .replace(/^(\s*)([A-Za-z0-9_:-]+)\[(?!")([^\]\n]+)\]/gm, '$1$2["$3"]')
-        .replace(/(\b[A-Za-z0-9_:-]+)\(\(\s*"?\s*\(?\s*"?([^"()\n]+?)"?\s*\)?\s*"?\s*\)\)/g, '$1(("$2"))')
-        .replace(/(\b[A-Za-z0-9_:-]+)\(\(\((?!")([^\)\n]+)\)\)\)/g, '$1((("$2")))')
-        .replace(/(\b[A-Za-z0-9_:-]+)\{\{\s*"{0,2}([^"\n]+?)"{0,2}\s*\}\}/g, '$1{"$2"}')
-        .replace(/(\b[A-Za-z0-9_:-]+)\{(?!")([^\}\n]+)\}/g, '$1{"$2"}')
-        .replace(/--\s*([^|][^-<>]+?)\s*-->/g, '--|$1|-->')
-        .replace(/--\s*([^|][^-<>]+?)\s*==>/g, '--|$1|==>')
-        .replace(/--\s*"\s*([^"]+?)\s*"\s*-->/g, '--|$1|-->')
-        .replace(/--\s*"\s*([^"]+?)\s*"\s*==>/g, '--|$1|==>')
-        .replace(/-\.\s*"([^"\n]+?)"\s*\.-\s*->/g, '-. "$1" .->')
-        .replace(/-\.\s*([^"\n]+?)\s*\.-\s*->/g, '-. $1 .->')
-        .replace(/\.\-\s*->/g, '.->')
-        .replace(/\|\s*"([^"\n]+?)"\s*\|/g, '|$1|')
-        .replace(/\["\(\s*"?([^"\n]+?)"?\s*\)"\]/g, '[($1)]')
-        .replace(/^\s*([A-Za-z0-9_:-]+\s*\[[^\]]+\])\s*:\s*$/g, '$1')
-        .replace(/[《》〈〉「」『』【】〔〕〖〗〘〙〚〛①②③④⑤⑥⑦⑧⑨⑩]/g, '')
-        .replace(/\)\s+:::/g, '):::')
-        .replace(/\]\s+:::/g, ']:::')
-        .replace(/\}\s+:::/g, '}:::')
-        .replace(/:::\s+/g, ':::')
-        .replace(/^(\s*subgraph\s+)"'([^'"]+)'"(\s*)$/gim, '$1"$2"$3')
-        .replace(/\['([^'"\]]+)"\]/g, '[$1]')
-        .replace(/\["([^'"\]]+)'\]/g, '[$1]')
-    ).map(sanitizeSubgraphTitle).map(sanitizeQuotedNodeLabels).map(sanitizeEdgeLabels);
+    lines = applyLineCleaners(lines, protectedLineCleaners);
+    lines = normalizeClassDefIdentifiers(lines);
 
     lines = lines.map((line, idx) => restoreMathRegions(line, allMathPlaceholders[idx]));
 
@@ -575,8 +1122,14 @@ function normalizeAndCorrectMermaid(definition) {
         if (/^\s*classDef\b/i.test(line) && !/;\s*$/.test(line)) {
             return `${line.trimEnd()};`;
         }
-        if (/^\s*linkStyle\b/i.test(line) && !/;\s*$/.test(line)) {
-            return `${line.trimEnd()};`;
+        if (/^\s*linkStyle\b/i.test(line)) {
+            const stripped = stripLinkStyleColorTerminators(line);
+            if (stripped !== line || /#\w+\s*$/.test(line)) {
+                return stripped.trimEnd();
+            }
+            if (!/;\s*$/.test(line)) {
+                return `${line.trimEnd()};`;
+            }
         }
         return line;
     });
@@ -684,6 +1237,8 @@ function normalizeAndCorrectMermaid(definition) {
     const directiveTypes = [
         'flowchart',
         'graph',
+        'mindmap',
+        'timeline',
         'sequenceDiagram',
         'classDiagram',
         'stateDiagram',
@@ -691,16 +1246,26 @@ function normalizeAndCorrectMermaid(definition) {
         'erDiagram',
         'gantt',
         'journey',
-        'pie',
-        'mindmap'
+        'pie'
     ];
     const getDirective = (line) => {
         const trimmed = line.trim();
         const match = directiveTypes.find(type => new RegExp(`^${type}\\b`, 'i').test(trimmed));
         return match || null;
     };
-    const directiveIndex = lines.findIndex(line => getDirective(line));
-    let primaryDirective = directiveIndex >= 0 ? getDirective(lines[directiveIndex]) : null;
+    const directiveEntries = lines
+        .map((line, idx) => ({ idx, type: getDirective(line) }))
+        .filter(item => !!item.type);
+    let primaryEntry = null;
+    if (directiveEntries.length > 0) {
+        primaryEntry = directiveEntries[0];
+        const preferredNonFlow = directiveEntries.find(item => !/^(flowchart|graph)$/i.test(String(item.type || '')));
+        if (preferredNonFlow) {
+            primaryEntry = preferredNonFlow;
+        }
+    }
+    const directiveIndex = primaryEntry ? primaryEntry.idx : -1;
+    let primaryDirective = primaryEntry ? primaryEntry.type : null;
     if (primaryDirective) {
         const preservedPreamble = lines.slice(0, directiveIndex).filter(line =>
             /^\s*%%\{/.test(line) || /^\s*%%/.test(line) || !line.trim()
@@ -725,7 +1290,7 @@ function normalizeAndCorrectMermaid(definition) {
     const normalized = lines.join('\n').trim();
 
     // 轻量判断
-    const looksLikeMermaid = /(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|journey|pie|mindmap|subgraph\b|-->|==>)/i.test(normalized);
+    const looksLikeMermaid = /(?:graph|flowchart|mindmap|timeline|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|journey|pie|subgraph\b|-->|==>)/i.test(normalized);
 
     if (!looksLikeMermaid) {
         return { corrected: '', skippedReason: 'not-mermaid-like' };
@@ -742,11 +1307,15 @@ function simplifyMermaidDefinition(definition) {
     if (!definition) return definition;
     let simplified = definition;
     simplified = simplified
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\[""([^"\n]+)""\]/g, '$1["$2"]')
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{""([^"\n]+)""\}/g, '$1{"$2"}')
         .replace(/(\b[A-Za-z0-9_:-]+)\s*\[\(\s*([^\]\n]+?)\s*\)\]/g, '$1["$2"]')
         .replace(/(\b[A-Za-z0-9_:-]+)\s*\(\(\(([^)\n]+)\)\)\)/g, '$1["$2"]')
         .replace(/(\b[A-Za-z0-9_:-]+)\s*\(\(([^)\n]+)\)\)/g, '$1["$2"]')
-        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{\{([^}\n]+)\}\}/g, '$1["$2"]')
-        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{([^}\n]+)\}/g, '$1["$2"]');
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{\{\s*"([^"\n]+)"\s*\}\}/g, '$1["$2"]')
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{\{\s*([^"}\n]+)\s*\}\}/g, '$1["$2"]')
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{\s*"([^"\n]+)"\s*\}/g, '$1["$2"]')
+        .replace(/(\b[A-Za-z0-9_:-]+)\s*\{\s*([^"}\n]+)\s*\}/g, '$1["$2"]');
 
     simplified = simplified.replace(/\["([^"\n]+)"\]/g, (match, label) => {
         const withoutIcons = label.replace(/\bfa:[A-Za-z0-9-]+\b/g, '');
@@ -756,6 +1325,78 @@ function simplifyMermaidDefinition(definition) {
     });
 
     return simplified;
+}
+
+export function buildMermaidRenderCandidates(definition) {
+    const rawDefinition = String(definition || '').trim();
+    const candidates = [];
+    const addCandidate = (source) => {
+        const normalized = String(source || '').trim();
+        if (normalized && !candidates.includes(normalized)) {
+            candidates.push(normalized);
+        }
+    };
+
+    let source = normalizeMermaidSourceArtifacts(rawDefinition);
+    if (/^\s*flowchart\s+(?:TB|TD|BT|RL|LR)\b/im.test(source)
+        && /^\s*subgraph\b/im.test(source)) {
+        source = source.replace(/(\])end(?=\s*(?:$|[\u3400-\u9fff]))/gm, '$1\nend');
+        source = source.replace(/^(\s*end)[\u3400-\u9fff][^\r\n]*$/im, '$1');
+        // 最后一条完整 class 语句后误粘贴的中文说明保留为注释，不改动标签内容。
+        source = source.replace(
+            /^([ \t]*class[ \t]+[A-Za-z_][A-Za-z0-9_:-]*(?:[ \t]*,[ \t]*[A-Za-z_][A-Za-z0-9_:-]*)*[ \t]+[A-Za-z_][A-Za-z0-9_-]*[ \t]*;)[ \t]*([\u3400-\u9fff][^\r\n]*)(?:\r?\n[ \t]*)*(?![\s\S])/m,
+            '$1\n%% $2'
+        );
+    }
+    addCandidate(stripLinkStyleColorTerminators(normalizeMermaidColorFormats(source)));
+    const { corrected, skippedReason } = normalizeAndCorrectMermaid(source);
+    if (corrected && !skippedReason) {
+        addCandidate(corrected);
+        addCandidate(simplifyMermaidDefinition(corrected));
+    }
+    return candidates;
+}
+
+export function normalizeMermaidDefinitionForRender(definition) {
+    const candidates = buildMermaidRenderCandidates(definition);
+    return candidates[1] || candidates[0] || '';
+}
+
+async function resolveMermaidDefinitionForRender(definition, parseMermaidDefinition, pushAttempt = () => { }) {
+    const rawDefinition = String(definition || '').trim();
+    const candidates = buildMermaidRenderCandidates(rawDefinition);
+    let lastParseError = null;
+
+    for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+        const candidate = candidates[candidateIndex];
+        const stage = candidateIndex === 0
+            ? (candidate !== rawDefinition ? 'normalized-colors' : 'raw')
+            : candidateIndex === 1
+                ? 'corrected'
+                : 'simplified';
+        try {
+            pushAttempt(stage, candidate, 'trying');
+            if (typeof parseMermaidDefinition === 'function') {
+                await parseMermaidDefinition(candidate);
+            }
+            pushAttempt(stage, candidate, 'ok');
+            return {
+                definition: candidate,
+                usedSanitizedDefinition: candidate !== rawDefinition,
+                skipped: false
+            };
+        } catch (candidateParseError) {
+            lastParseError = candidateParseError;
+            pushAttempt(stage, candidate, 'failed', candidateParseError);
+        }
+    }
+
+    return {
+        definition: '',
+        usedSanitizedDefinition: false,
+        skipped: candidates.length === 0,
+        error: lastParseError || new Error('Mermaid definition could not be parsed')
+    };
 }
 
 async function loadMermaidFromSources(loaderFn) {
@@ -771,9 +1412,9 @@ async function loadMermaidFromSources(loaderFn) {
     throw lastError || new Error('Mermaid script could not be loaded from any source.');
 }
 
-function ensureMermaid(loadScript) {
+export function ensureMermaid(loadScript, { configure = true } = {}) {
     if (window[MERMAID_GLOBAL]) {
-        if (!mermaidConfigured) {
+        if (configure && !mermaidConfigured) {
             configureMermaid(window[MERMAID_GLOBAL]);
         }
         return Promise.resolve(window[MERMAID_GLOBAL]);
@@ -789,7 +1430,6 @@ function ensureMermaid(loadScript) {
             if (!mermaid) {
                 throw new Error('Mermaid failed to load');
             }
-            configureMermaid(mermaid);
             return mermaid;
         }).catch(error => {
             mermaidInitPromise = null;
@@ -797,7 +1437,11 @@ function ensureMermaid(loadScript) {
         });
     }
 
-    return mermaidInitPromise;
+    return mermaidInitPromise.then(mermaid => {
+        // 启动预加载只准备库，主题/字体仍在实际渲染时读取。
+        if (configure) configureMermaid(mermaid);
+        return mermaid;
+    });
 }
 
 function notifyRenderState() {
@@ -824,18 +1468,10 @@ function configureMermaid(mermaid) {
     }
 
     try {
-        mermaid.initialize({
-            startOnLoad: false,
-            securityLevel: 'loose',
-            theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
-            htmlLabels: false,
-            flowchart: {
-                htmlLabels: false,
-                useMaxWidth: false,
-                padding: 10
-            },
-            sequence: { useMaxWidth: true }
-        });
+        mermaid.initialize(buildMermaidConfig({
+            isDarkTheme: isDarkThemeRoot(document?.documentElement),
+            fontFamily: getAppFontFamily()
+        }));
     } catch (error) {
         console.warn('Mermaid initialization failed:', error);
     }
@@ -1289,14 +1925,17 @@ function shouldRenderMermaid(codeElement, { isFinalRender, rootElement }) {
 
     const className = codeElement.className || '';
     const declaredLang = (codeElement.getAttribute('data-lang') || codeElement.getAttribute('class') || '').toLowerCase();
-    const isMermaidLang = /\bmermaid\b/.test(className) || /\bmermaid\b/.test(declaredLang);
+    const text = (codeElement.textContent || '').trim();
+    const isMermaidLang = /\b(?:mermaid|mindmap)\b/.test(className)
+        || /\b(?:mermaid|mindmap)\b/.test(declaredLang)
+        || /^mindmap\b/i.test(text);
 
     if (!isMermaidLang) {
         return false;
     }
 
-    const text = (codeElement.textContent || '').trim();
-    if (!text) {
+    if (!isRenderableMermaidDefinition(text)) {
+        codeElement.dataset.mermaidProcessed = 'skipped';
         return false;
     }
 
@@ -1332,32 +1971,51 @@ export function renderMermaidDiagrams(rootElement, { loadScript, isFinalRender }
             }
 
             const rawDefinition = (codeElement.textContent || '').trim();
-            const { corrected, skippedReason } = normalizeAndCorrectMermaid(rawDefinition);
-            const graphDefinition = corrected;
+            let graphDefinition = normalizeMermaidColorFormats(rawDefinition);
+            let usedSanitizedDefinition = graphDefinition !== rawDefinition;
+            const debugAttempts = [];
+            const pushAttempt = (stage, input, status, error) => {
+                const normalizedInput = String(input || '');
+                debugAttempts.push({
+                    stage,
+                    status,
+                    length: normalizedInput.length,
+                    preview: normalizedInput.slice(0, 500),
+                    error: error ? String(error?.message || error) : ''
+                });
+            };
+
             if (!graphDefinition) {
                 codeElement.dataset.mermaidProcessed = 'true';
-                if (skippedReason) {
-                    codeElement.dataset.mermaidProcessed = 'skipped';
-                }
                 continue;
-            }
-
-            if (graphDefinition !== rawDefinition) {
-                codeElement.textContent = graphDefinition;
-                codeElement.dataset.mermaidSanitized = 'true';
             }
 
             try {
                 if (typeof mermaid.parse === 'function') {
-                    try {
-                        mermaid.parse(graphDefinition);
-                    } catch (parseError) {
-                        throw new Error(parseError?.message || 'Mermaid definition could not be parsed');
+                    const parseMermaidDefinition = async (source) => {
+                        await Promise.resolve(mermaid.parse(source));
+                    };
+                    const resolved = await resolveMermaidDefinitionForRender(rawDefinition, parseMermaidDefinition, pushAttempt);
+                    if (resolved.skipped) {
+                        codeElement.dataset.mermaidProcessed = 'skipped';
+                        continue;
                     }
+                    if (!resolved.definition) {
+                        throw new Error(resolved.error?.message || 'Mermaid definition could not be parsed');
+                    }
+                    graphDefinition = resolved.definition;
+                    usedSanitizedDefinition = resolved.usedSanitizedDefinition;
+                }
+
+                if (usedSanitizedDefinition) {
+                    codeElement.textContent = graphDefinition;
+                    codeElement.dataset.mermaidSanitized = 'true';
                 }
 
                 const uniqueId = `mermaid-diagram-${Date.now()}-${diagramIdCounter++}`;
+                pushAttempt('render', graphDefinition, 'trying');
                 const renderResult = await mermaid.render(uniqueId, graphDefinition);
+                pushAttempt('render', graphDefinition, 'ok');
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mermaid-diagram-wrapper';
                 wrapper.innerHTML = sanitizeMermaidSvg(renderResult.svg);
@@ -1424,82 +2082,26 @@ export function renderMermaidDiagrams(rootElement, { loadScript, isFinalRender }
                     delete codeElement.dataset.mermaidPending;
                 }
             } catch (error) {
-                let retrySucceeded = false;
-                try {
-                    const simplified = simplifyMermaidDefinition(graphDefinition);
-                    if (simplified && simplified !== graphDefinition) {
-                        if (typeof mermaid.parse === 'function') {
-                            mermaid.parse(simplified);
-                        }
-                        const retryId = `mermaid-diagram-${Date.now()}-${diagramIdCounter++}`;
-                        const retryResult = await mermaid.render(retryId, simplified);
-                        const retryWrapper = document.createElement('div');
-                        retryWrapper.className = 'mermaid-diagram-wrapper';
-                        retryWrapper.innerHTML = sanitizeMermaidSvg(retryResult.svg);
-                        renderMathInMermaid(retryWrapper);
+                pushAttempt('render', graphDefinition, 'failed', error);
+                codeElement.dataset.mermaidProcessed = 'error';
+                if (codeElement.dataset.mermaidPending === 'true') {
+                    delete codeElement.dataset.mermaidPending;
+                }
 
-                        if (retryResult.bindFunctions) {
-                            try {
-                                retryResult.bindFunctions(retryWrapper);
-                            } catch (_) { }
-                        }
+                const errorBanner = document.createElement('div');
+                errorBanner.className = 'mermaid-error-banner';
+                errorBanner.textContent = `Mermaid diagram rendering failed: ${error.message || error}`;
 
-                        const details = document.createElement('details');
-                        details.className = 'mermaid-source-toggle';
-                        const summary = document.createElement('summary');
-                        summary.textContent = 'Mermaid source';
-                        const preClone = parentPre.cloneNode(true);
-                        preClone.classList.add('mermaid-source');
-                        preClone.querySelectorAll('code').forEach(code => {
-                            code.dataset.mermaidSource = 'true';
-                        });
-                        details.appendChild(summary);
-                        details.appendChild(preClone);
-                        preClone.querySelectorAll('.copy-btn-wrapper').forEach(wrapper => wrapper.remove());
+                const wrapper = parentPre.parentNode?.classList?.contains('code-block-wrapper')
+                    ? parentPre.parentNode
+                    : null;
+                const insertTarget = wrapper || parentPre;
 
-                        const container = document.createElement('div');
-                        container.className = 'mermaid-render-container';
-                        const svgElement = retryWrapper.querySelector('svg');
-                        if (svgElement) {
-                            const toolbar = createMermaidToolbar(svgElement, retryId);
-                            container.appendChild(toolbar);
-                        }
-                        container.appendChild(retryWrapper);
-                        container.appendChild(details);
-
-                        const copyWrapper = parentPre.closest('.code-block-wrapper');
-                        if (copyWrapper && copyWrapper.parentNode) {
-                            copyWrapper.parentNode.replaceChild(container, copyWrapper);
-                        } else {
-                            parentPre.replaceWith(container);
-                        }
-
-                        codeElement.dataset.mermaidProcessed = 'true';
-                        if (codeElement.dataset.mermaidPending === 'true') {
-                            delete codeElement.dataset.mermaidPending;
-                        }
-                        retrySucceeded = true;
-                    }
-                } catch (_) { }
-
-                if (!retrySucceeded) {
-                    codeElement.dataset.mermaidProcessed = 'error';
-                    if (codeElement.dataset.mermaidPending === 'true') {
-                        delete codeElement.dataset.mermaidPending;
-                    }
-
-                    const errorBanner = document.createElement('div');
-                    errorBanner.className = 'mermaid-error-banner';
-                    errorBanner.textContent = `Mermaid diagram rendering failed: ${error.message || error}`;
-
-                    const wrapper = parentPre.parentNode?.classList?.contains('code-block-wrapper')
-                        ? parentPre.parentNode
-                        : null;
-                    const insertTarget = wrapper || parentPre;
-
-                    if (insertTarget.parentNode && typeof insertTarget.parentNode.insertBefore === 'function') {
-                        insertTarget.parentNode.insertBefore(errorBanner, insertTarget);
-                    }
+                if (insertTarget.parentNode && typeof insertTarget.parentNode.insertBefore === 'function') {
+                    insertTarget.parentNode
+                        .querySelectorAll('.mermaid-error-banner, .mermaid-error-details')
+                        .forEach((el) => el.remove());
+                    insertTarget.parentNode.insertBefore(errorBanner, insertTarget);
                 }
             }
         }

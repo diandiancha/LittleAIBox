@@ -7,12 +7,13 @@ import {
     isZipHeader,
     getZipSafetyStats
 } from './media-utils.js';
+import { yieldToBrowser } from './yield.js';
+import { runParseTask, throwIfParseAborted, reportParseProgress } from './parse-task.js';
 
 const DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_UNCOMPRESSED_BYTES = 80 * 1024 * 1024;
 const DEFAULT_MAX_ZIP_ENTRIES = 6000;
 const DEFAULT_MAX_SLIDES = 200;
-const DEFAULT_PARSE_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_COMPRESSION_RATIO = 200;
 
 const ELEMENT_NODE = typeof Node === 'undefined' ? 1 : Node.ELEMENT_NODE;
@@ -21,19 +22,6 @@ export function createPptxReader({ loadScript, getToastMessage }) {
     const getMessage = (key, params) => {
         if (typeof getToastMessage !== 'function') return '';
         return getToastMessage(key, params);
-    };
-
-    const runWithTimeout = async (promise, timeoutMs, timeoutMessage) => {
-        if (!timeoutMs || timeoutMs <= 0) return promise;
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-        });
-        try {
-            return await Promise.race([promise, timeoutPromise]);
-        } finally {
-            clearTimeout(timeoutId);
-        }
     };
 
     const guardPptxFile = async (file, options) => {
@@ -88,8 +76,9 @@ export function createPptxReader({ loadScript, getToastMessage }) {
             .join('\n')
     );
 
-    const extractTextFromSlideXml = async (xmlContent, mediaCtx, includeImages) => {
+    const extractTextFromSlideXml = async (xmlContent, mediaCtx, includeImages, signal) => {
         try {
+            throwIfParseAborted(signal);
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlContent, 'application/xml');
             const spTree = xmlDoc.getElementsByTagName('p:spTree')[0];
@@ -101,6 +90,7 @@ export function createPptxReader({ loadScript, getToastMessage }) {
                         .filter(node => node.nodeType === ELEMENT_NODE);
 
                     for (const child of elementChildren) {
+                        throwIfParseAborted(signal);
                         if (child.tagName === 'p:sp') {
                             const textBody = child.getElementsByTagName('a:txBody')[0];
                             if (!textBody) {
@@ -150,6 +140,7 @@ export function createPptxReader({ loadScript, getToastMessage }) {
             const legacyText = legacySlideTextExtraction(xmlDoc);
             return legacyText ? TextCleaner.process(legacyText) : legacyText;
         } catch (_) {
+            throwIfParseAborted(signal);
             const fallback = legacySlideTextFallback(xmlContent);
             return fallback ? TextCleaner.process(fallback) : fallback;
         }
@@ -367,7 +358,9 @@ export function createPptxReader({ loadScript, getToastMessage }) {
             throw new Error('JSZip is unavailable for PPTX fallback extraction');
         }
         const arrayBuffer = await file.arrayBuffer();
+        throwIfParseAborted(options.signal);
         const zip = await JSZipGlobal.loadAsync(arrayBuffer);
+        reportParseProgress(options.signal);
         guardZip(zip, options);
         const slideNames = Object.keys(zip.files)
             .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
@@ -380,14 +373,17 @@ export function createPptxReader({ loadScript, getToastMessage }) {
             throw new Error(getMessage('fileManagement.fileCompressedTooLarge') || 'Compressed file too large.');
         }
 
-        const slidesMarkdown = await Promise.all(slideNames.map(async (slideName, index) => {
+        const slidesMarkdown = [];
+        for (let index = 0; index < slideNames.length; index += 1) {
+            await yieldToBrowser(options.signal);
+            const slideName = slideNames[index];
             const xmlContent = await zip.files[slideName].async('text');
             const relsName = slideName.replace('ppt/slides/', 'ppt/slides/_rels/') + '.rels';
             const relsXml = zip.files[relsName] ? await zip.files[relsName].async('text') : null;
             const parser = new DOMParser();
             const relsDoc = relsXml ? parser.parseFromString(relsXml, 'application/xml') : null;
             const mediaCtx = relsDoc ? createMediaContext(zip, relsDoc, 'ppt/slides', loadScript) : null;
-            const textContent = await extractTextFromSlideXml(xmlContent, mediaCtx, includeImages);
+            const textContent = await extractTextFromSlideXml(xmlContent, mediaCtx, includeImages, options.signal);
             const sections = [];
             if (textContent) {
                 sections.push(textContent);
@@ -397,19 +393,20 @@ export function createPptxReader({ loadScript, getToastMessage }) {
             if (zip.files[notesName]) {
                 try {
                     const notesXml = await zip.files[notesName].async('text');
-                    const notesText = extractTextFromSlideXml(notesXml, mediaCtx, includeImages);
+                    const notesText = await extractTextFromSlideXml(notesXml, mediaCtx, includeImages, options.signal);
                     if (notesText) {
                         const notesLabel = getPptxNotesLabel();
                         sections.push(`**${notesLabel}**\n${formatAsBlockQuote(notesText)}`);
                     }
-                } catch (notesError) {
-                    console.debug('Failed to parse PPTX notes:', notesError);
+                } catch (_) {
+                    throwIfParseAborted(options.signal);
                 }
             }
 
             const body = sections.length ? `\n\n${sections.join('\n\n')}` : '';
-            return `## ${getToastMessage('fileProcessing.slide')} ${index + 1}${body}`;
-        }));
+            slidesMarkdown.push(`## ${getToastMessage('fileProcessing.slide')} ${index + 1}${body}`);
+            reportParseProgress(options.signal);
+        }
 
         if (slidesMarkdown.length === 0) {
             throw new Error('PPTX fallback extraction produced no slides');
@@ -419,14 +416,12 @@ export function createPptxReader({ loadScript, getToastMessage }) {
     };
 
     const readPptxFile = async (file, options = {}) => {
-        const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_PARSE_TIMEOUT_MS;
         await guardPptxFile(file, options);
-        await loadScript('/libs/jszip.min.js', 'JSZip');
-        return await runWithTimeout(
-            convertPptxToPlainText(file, options),
-            timeoutMs,
-            getMessage('fileManagement.parseTimeout') || 'File parse timeout.'
-        );
+        return await runParseTask(async (signal) => {
+            await loadScript('/libs/jszip.min.js', 'JSZip');
+            throwIfParseAborted(signal);
+            return await convertPptxToPlainText(file, { ...options, signal });
+        }, file, options, getMessage('fileManagement.parseTimeout'));
     };
 
     return { readPptxFile };

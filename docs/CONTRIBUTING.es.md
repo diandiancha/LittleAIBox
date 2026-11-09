@@ -10,6 +10,8 @@ Cada informe de error, idea o línea de código hace que este proyecto sea mejor
 
 </div>
 
+> **Alcance y actualización:** este documento describe las funciones y la arquitectura del proyecto completo. El repositorio publica una selección del frontend, sin servidores, pagos, reglas comerciales ni credenciales. La versión 3.1.0 actualiza diagramas, fórmulas, Workers de documentos y teclado. El análisis local y el envío al modelo son operaciones distintas. Consulte el [README inglés](../README.md) para los contratos y requisitos actualizados.
+
 ---
 
 ## 🚀 Inicio Rápido (Para Nuevos Contribuidores)
@@ -57,7 +59,7 @@ Todos estamos aprendiendo — ayuda a otros a crecer contigo. ❤️
 ## 🧑‍💻 Configuración de Desarrollo
 
 **Requisitos**
-- Node.js ≥ 18
+- Node.js **^20.19.0 || >=22.12.0**
 - npm ≥ 9
 - Git (última versión)
 - VS Code (recomendado)
@@ -289,7 +291,7 @@ cp public/locales/en.json public/locales/TU_IDIOMA.json
 Edita los valores, mantén las claves idénticas, luego agrega tu código de idioma en `src/i18n.js`:
 
 ```javascript
-const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', 'TU_IDIOMA'];
+const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', 'es', 'fr', 'TU_IDIOMA'];
 ```
 
 Prueba: `npm run dev` → Cambia a tu idioma en Configuración → Verifica que todos los elementos de UI estén traducidos.

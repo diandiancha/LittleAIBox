@@ -17,7 +17,7 @@ Every bug report, idea, or line of code makes this project better. 🌱
 1. **Fork & Clone**
 
    ```bash
-   git clone https://github.com/diandiancha/LittleAIBox.git
+   git clone https://github.com/YOUR_USERNAME/LittleAIBox.git
    cd LittleAIBox
    npm install
    npm run dev
@@ -57,12 +57,14 @@ Everyone's learning — help others grow with you. ❤️
 ## 🧑‍💻 Development Setup
 
 **Requirements**
-- Node.js ≥ 18
+- Node.js 20.x at least 20.19, or 22.12+ (matching Vite)
 - npm ≥ 9
 - Git (latest)
 - VS Code (recommended)
 
 **Start locally**
+
+This checkout builds the frontend, not the complete hosted service. For service-backed features, copy `.env.example` to `.env.local` and configure a compatible backend origin with `VITE_API_BASE_URL`. The development build does not automatically use the official production API. Never put secrets in `VITE_*` variables.
 
 ```bash
 npm install
@@ -95,14 +97,19 @@ LittleAIBox/
 │   ├── db.js              # IndexedDB wrapper
 │   ├── i18n.js            # Internationalization
 │   ├── mermaid-renderer.js # Diagram rendering
+│   ├── rendering/         # Active Mermaid/Vega renderers and theme settings
+│   ├── mathrender/        # Formula preprocessing and rendering
+│   ├── keyboard/          # Native/browser drivers and chat adapter
+│   ├── file-parsers/      # Document readers and parse lifecycle
+│   ├── worker-parsers/    # Parser Workers
 │   ├── floating-timeline.js # Floating timeline navigation
 │   ├── style.css          # Global styles
 │   └── sw-custom.js       # Service Worker
 ├── public/                 # Static assets
-│   ├── locales/           # Translation files (5 languages)
+│   ├── locales/           # Seven locale catalogs
 │   ├── libs/              # Third-party libraries
 │   ├── images/            # Images and icons
-│   └── manifest.webmanifest # PWA manifest
+│   └── shared/            # Shared browser modules; manifest.json is generated at build time
 ├── appshow/                # Screenshots by language
 ├── capacitor.config.json   # Mobile app configuration
 ├── vite.config.js          # Build configuration
@@ -184,9 +191,18 @@ async function handleFileUpload(file) {
    git checkout -b feature/my-feature
    ```
 
-3. **Test changes** — on multiple browsers if possible
+3. **Test changes** — run `npm test` and `npm run build`, then verify affected browser behavior
 
 4. **Push & open PR**
+
+**Core validation and source boundaries**
+
+- Use the bundled Mermaid/KaTeX libraries and complete reported input for rendering fixes. Check normal syntax, code fences, Chinese labels, themes and stream completion.
+- For parsers, use sanitized documents and check text, image references, Worker execution and relevant fallback paths.
+- For keyboard changes, state browsers/devices tested. Node tests and desktop resizing do not prove native keyboard behavior.
+- Explain actual checks and remaining verification boundaries in the PR; preserve frontend contracts when changing shared modules.
+- Keep backend implementations, subscription/payment rules, hosted routing, credentials, signing material and user data out of the repository. Architecture descriptions can still explain the complete project.
+- Change active renderers under `src/rendering/`; top-level renderer files are compatibility entrypoints.
 
 **Pull Request Template**
 
@@ -278,6 +294,8 @@ Supported languages:
 - 🇬🇧 English (en)
 - 🇯🇵 Japanese (ja)
 - 🇰🇷 Korean (ko)
+- 🇪🇸 Spanish (es)
+- 🇫🇷 French (fr)
 
 **Add a new language**
 
@@ -288,7 +306,7 @@ cp public/locales/en.json public/locales/YOUR_LANG.json
 Edit values, keep keys identical, then add your language code in `src/i18n.js`:
 
 ```javascript
-const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', 'YOUR_LANG'];
+const SUPPORTED_LANGUAGES = ['en', 'zh-CN', 'zh-TW', 'es', 'ja', 'ko', 'fr', 'YOUR_LANG'];
 ```
 
 Test: `npm run dev` → Switch to your language in Settings → Verify all UI elements are translated.

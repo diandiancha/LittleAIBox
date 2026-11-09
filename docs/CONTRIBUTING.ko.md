@@ -10,6 +10,8 @@
 
 </div>
 
+> **공개 범위와 갱신:** 이 문서는 전체 프로젝트의 기능과 설계를 설명합니다. 공개 저장소는 선택한 프런트엔드 스냅샷이며 백엔드, 결제, 상용 권한 규칙과 인증 정보를 포함하지 않습니다. 3.1.0은 차트·수식, 문서 파서 Worker와 키보드 처리를 갱신합니다. 로컬 분석과 모델로의 전송은 별도 작업입니다. 최신 실행 조건과 구조는 [English README](../README.md)를 참고하세요.
+
 ---
 
 ## 🚀 빠른 시작（신규 기여자용）
@@ -57,7 +59,7 @@
 ## 🧑‍💻 개발 환경 설정
 
 **요구사항**
-- Node.js ≥ 18
+- Node.js **^20.19.0 || >=22.12.0**
 - npm ≥ 9
 - Git（최신 버전）
 - VS Code（권장）
@@ -288,7 +290,7 @@ cp public/locales/en.json public/locales/언어.json
 값을 편집하고 키를 동일하게 유지한 다음 `src/i18n.js`에 언어 코드 추가:
 
 ```javascript
-const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', '언어'];
+const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW', 'es', 'fr', '언어'];
 ```
 
 테스트: `npm run dev` → 설정에서 언어로 전환 → 모든 UI 요소가 번역되었는지 확인.

@@ -7,12 +7,13 @@ import {
     isZipHeader,
     getZipSafetyStats
 } from './media-utils.js';
+import { yieldToBrowser } from './yield.js';
+import { runParseTask, throwIfParseAborted, reportParseProgress } from './parse-task.js';
 
 const DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_UNCOMPRESSED_BYTES = 80 * 1024 * 1024;
 const DEFAULT_MAX_ZIP_ENTRIES = 4000;
 const DEFAULT_MAX_XML_CHARS = 8 * 1024 * 1024;
-const DEFAULT_PARSE_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_COMPRESSION_RATIO = 200;
 
 const inferHeader = (rPr, pStyleVal) => {
@@ -36,19 +37,6 @@ export function createDocxReader({ loadScript, getToastMessage }) {
     const getMessage = (key, params) => {
         if (typeof getToastMessage !== 'function') return '';
         return getToastMessage(key, params);
-    };
-
-    const runWithTimeout = async (promise, timeoutMs, timeoutMessage) => {
-        if (!timeoutMs || timeoutMs <= 0) return promise;
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-        });
-        try {
-            return await Promise.race([promise, timeoutPromise]);
-        } finally {
-            clearTimeout(timeoutId);
-        }
     };
 
     const guardDocxFile = async (file, options) => {
@@ -98,6 +86,7 @@ export function createDocxReader({ loadScript, getToastMessage }) {
     };
 
     const collectInlineContent = async (node, parts, ctx, includeImages) => {
+        throwIfParseAborted(ctx.signal);
         if (!node) return;
         if (node.nodeType !== 1) return;
 
@@ -159,7 +148,9 @@ export function createDocxReader({ loadScript, getToastMessage }) {
     const extractDocxTextWithOmml = async (arrayBuffer, options = {}) => {
         const includeImages = options.includeImages !== false;
         await loadScript('/libs/jszip.min.js', 'JSZip');
+        throwIfParseAborted(options.signal);
         const zip = await JSZip.loadAsync(arrayBuffer);
+        reportParseProgress(options.signal);
         guardZip(zip, options);
         const docXml = await zip.file('word/document.xml').async('text');
         const maxXmlChars = Number.isFinite(options.maxXmlChars) ? options.maxXmlChars : DEFAULT_MAX_XML_CHARS;
@@ -167,16 +158,23 @@ export function createDocxReader({ loadScript, getToastMessage }) {
             throw new Error(getMessage('fileManagement.fileCompressedTooLarge') || 'Compressed file too large.');
         }
         const relsXml = await zip.file('word/_rels/document.xml.rels')?.async('text');
+        throwIfParseAborted(options.signal);
         const parser = new DOMParser();
         const doc = parser.parseFromString(docXml, 'application/xml');
         const relsDoc = relsXml ? parser.parseFromString(relsXml, 'application/xml') : null;
         const ctx = createMediaContext(zip, relsDoc, 'word', loadScript);
+        ctx.signal = options.signal;
 
         let fullText = '';
         const body = doc.getElementsByTagName('w:body')[0];
         const bodyChildren = body ? body.childNodes : [];
 
-        for (const node of Array.from(bodyChildren)) {
+        const nodes = Array.from(bodyChildren);
+        for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex += 1) {
+            if (nodeIndex % 8 === 0) {
+                await yieldToBrowser(options.signal);
+            }
+            const node = nodes[nodeIndex];
             if (node.nodeName === 'w:p') {
                 const pPr = node.getElementsByTagName('w:pPr')[0];
                 const firstRun = node.getElementsByTagName('w:r')[0];
@@ -198,13 +196,18 @@ export function createDocxReader({ loadScript, getToastMessage }) {
                 if (rows.length === 0) continue;
 
                 const matrix = [];
-                for (const row of rows) {
+                for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+                    if (rowIndex % 12 === 0) {
+                        await yieldToBrowser(options.signal);
+                    }
+                    const row = rows[rowIndex];
                     const cells = Array.from(row.getElementsByTagName('w:tc'));
                     const rowValues = [];
                     for (const cell of cells) {
                         rowValues.push(await extractCellText(cell, ctx, includeImages));
                     }
                     matrix.push(rowValues);
+                    reportParseProgress(options.signal);
                 }
 
                 const header = matrix[0];
@@ -216,20 +219,19 @@ export function createDocxReader({ loadScript, getToastMessage }) {
                 });
                 fullText += '\n';
             }
+            reportParseProgress(options.signal);
         }
 
         return { text: fullText };
     };
 
     const readDocxFile = async (file, options = {}) => {
-        const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_PARSE_TIMEOUT_MS;
         await guardDocxFile(file, options);
-        const buffer = await file.arrayBuffer();
-        return await runWithTimeout(
-            extractDocxTextWithOmml(buffer, options),
-            timeoutMs,
-            getMessage('fileManagement.parseTimeout') || 'File parse timeout.'
-        );
+        return await runParseTask(async (signal) => {
+            const buffer = await file.arrayBuffer();
+            throwIfParseAborted(signal);
+            return await extractDocxTextWithOmml(buffer, { ...options, signal });
+        }, file, options, getMessage('fileManagement.parseTimeout'));
     };
 
     return { readDocxFile };

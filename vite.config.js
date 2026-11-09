@@ -160,7 +160,7 @@ export default defineConfig({
                 short_name: 'LittleAIBox',
                 description: 'Privacy-First AI Chat Platform',
                 lang: 'en',
-                version: '3.0.7',
+                version: '3.1.0',
 
                 // --- 外观与显示 ---
                 theme_color: '#ffffff',

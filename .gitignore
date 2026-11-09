@@ -28,4 +28,21 @@ Thumbs.db
 # Local environment
 .env
 .env.local
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.log
+_worker.bundle
+
+# Private deployment and service implementation do not belong in this checkout.
+/functions/
+/migrations/
+/worker/
+/rate-limiter-worker/
+/chat-cleanup-worker/
+/wrangler.toml
+/table.txt
+/.agents/
+/.codex/
 

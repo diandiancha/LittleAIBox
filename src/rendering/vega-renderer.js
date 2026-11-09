@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { buildVegaThemeConfig, getAppFontFamily, isDarkThemeRoot } from './chart-theme-config.js';
 
 export const VEGA_SCRIPT_SOURCES = ['/libs/vega.min.js'];
 export const VEGA_LITE_SCRIPT_SOURCES = ['/libs/vega-lite.min.js'];
@@ -10,40 +11,6 @@ const pendingRenders = new Set();
 let diagramIdCounter = 0;
 const VEGA_SCHEMA_URL = 'https://vega.github.io/schema/vega/v5.json';
 const VEGA_LITE_SCHEMA_URL = 'https://vega.github.io/schema/vega-lite/v5.json';
-const DARK_THEME_CONFIG = {
-    background: '#0f172a',
-    view: { stroke: 'transparent' },
-    axis: {
-        domainColor: '#334155',
-        gridColor: '#1f2937',
-        tickColor: '#334155',
-        labelColor: '#e2e8f0',
-        titleColor: '#e2e8f0'
-    },
-    legend: {
-        labelColor: '#e2e8f0',
-        titleColor: '#e2e8f0'
-    },
-    title: { color: '#e2e8f0' },
-    text: { fill: '#e2e8f0' }
-};
-const LIGHT_THEME_CONFIG = {
-    background: '#ffffff',
-    view: { stroke: 'transparent' },
-    axis: {
-        domainColor: '#cbd5f5',
-        gridColor: '#e2e8f0',
-        tickColor: '#cbd5f5',
-        labelColor: '#0f172a',
-        titleColor: '#0f172a'
-    },
-    legend: {
-        labelColor: '#0f172a',
-        titleColor: '#0f172a'
-    },
-    title: { color: '#0f172a' },
-    text: { fill: '#0f172a' }
-};
 
 function sanitizeVegaSvg(svgText) {
     if (!svgText || typeof svgText !== 'string') return '';
@@ -107,7 +74,7 @@ async function loadFromList(list, loader) {
     throw lastError || new Error('Script load failed');
 }
 
-function ensureVegaLite(loadScript) {
+export function ensureVegaLite(loadScript) {
     if (window.vegaEmbed && window.vegaLite && window.vega) {
         return Promise.resolve(window.vegaEmbed);
     }
@@ -297,8 +264,10 @@ function normalizeVegaSpecString(raw) {
 
 function getVegaThemeConfig() {
     try {
-        const isDark = document?.documentElement?.classList?.contains('dark');
-        return isDark ? DARK_THEME_CONFIG : LIGHT_THEME_CONFIG;
+        return buildVegaThemeConfig({
+            isDarkTheme: isDarkThemeRoot(document?.documentElement),
+            fontFamily: getAppFontFamily()
+        });
     } catch (_) {
         return null;
     }
@@ -349,8 +318,8 @@ function applyDefaultChartSize(spec, hostElement) {
     if (!spec || typeof spec !== 'object') return;
     const rect = hostElement?.getBoundingClientRect?.() || {};
     const containerWidth = Math.max(0, Math.floor(rect.width || 0));
-    const targetWidth = Math.max(320, containerWidth || 560);
-    const targetHeight = Math.max(240, Math.round(targetWidth * 0.6));
+    const targetWidth = containerWidth || 560;
+    const targetHeight = Math.round(targetWidth * 0.6);
 
     if (spec.width == null) {
         spec.width = targetWidth;
@@ -390,6 +359,15 @@ function rewriteDataUrls(node) {
     }
 
     Object.values(node).forEach(rewriteDataUrls);
+}
+
+export function prepareVegaSpecForRender(rawSpec) {
+    const normalizedSpecText = normalizeVegaSpecString(rawSpec);
+    const spec = safeParseSpec(normalizedSpecText);
+    rewriteDataUrls(spec);
+    applyDefaultSchema(spec);
+    normalizeVegaLiteTopLevelFold(spec);
+    return spec;
 }
 
 function createErrorBanner(error, pre) {
@@ -579,9 +557,7 @@ export function renderVegaLiteDiagrams(rootElement, { loadScript, isFinalRender 
 
             codeElement.dataset.vegaLitePending = 'true';
             const rawSpec = (codeElement.textContent || '').trim();
-            const normalizedSpecText = normalizeVegaSpecString(rawSpec);
-
-            if (!normalizedSpecText || !looksLikeVegaSpecText(normalizedSpecText)) {
+            if (!rawSpec || !looksLikeVegaSpecText(normalizeVegaSpecString(rawSpec))) {
                 if (isFinalRender) {
                     codeElement.dataset.vegaLiteProcessed = 'skipped';
                 } else {
@@ -593,8 +569,8 @@ export function renderVegaLiteDiagrams(rootElement, { loadScript, isFinalRender 
 
             let spec;
             try {
-                spec = safeParseSpec(normalizedSpecText);
-                if (normalizedSpecText !== rawSpec) codeElement.dataset.vegaLiteSanitized = 'true';
+                spec = prepareVegaSpecForRender(rawSpec);
+                if (JSON.stringify(spec) !== rawSpec) codeElement.dataset.vegaLiteSanitized = 'true';
             } catch (error) {
                 if (isFinalRender) {
                     codeElement.dataset.vegaLiteProcessed = 'error';
@@ -608,9 +584,6 @@ export function renderVegaLiteDiagrams(rootElement, { loadScript, isFinalRender 
                 const specCopy = (typeof structuredClone === 'function')
                     ? structuredClone(spec)
                     : JSON.parse(JSON.stringify(spec));
-                rewriteDataUrls(specCopy);
-                applyDefaultSchema(specCopy);
-                normalizeVegaLiteTopLevelFold(specCopy);
                 const container = document.createElement('div');
                 container.className = 'vega-lite-render-container';
                 container.style.visibility = 'hidden';
@@ -630,7 +603,6 @@ export function renderVegaLiteDiagrams(rootElement, { loadScript, isFinalRender 
                 chartHost.className = 'vega-lite-chart-host';
                 chartHost.style.width = '100%';
                 chartHost.style.maxWidth = '900px';
-                chartHost.style.minWidth = '280px';
                 container.appendChild(chartHost);
 
                 const embedOptions = { actions: false, renderer: 'svg' };
