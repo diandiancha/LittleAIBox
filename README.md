@@ -135,6 +135,8 @@ These screenshots illustrate earlier interface versions; individual controls may
 - **Mindmap Rendering**: Markmap-based mindmap rendering and preview for structured markdown content
 - **Chart Export**: Download generated charts (Mermaid diagrams and Vega-Lite visualizations) as PNG or SVG files
 - **GitHub Flavored Markdown**: Full GFM support with syntax highlighting
+- **Stream Pacing**: Reuses the complete project's pacer to adjust output to text arrivals and queue length for supported model families, with fallback typing for other models
+- **Incremental Rich Content**: Reuses the complete project's DOM update and formula-state helpers to append content, retain reusable rendered nodes and restore matching formulas' horizontal scroll after region replacement
 
 ### 🛠️ **Advanced AI Features**
 - **Multiple Interaction Modes**: 
@@ -539,6 +541,8 @@ LittleAIBox/
 │   ├── entitlements.js          # Plan/limit capability gating
 │   ├── mindmap-mode.js          # Mindmap mode runtime
 │   ├── stream-image-runtime.js  # Stream image handling
+│   ├── stream-pacer.js         # Adaptive stream pacing copied from the complete project
+│   ├── stream-text-update.js   # Incremental DOM update planning and commits
 │   ├── sync-queue.js            # Offline retry/sync queue
 │   ├── router.js                # Client-side routing
 │   ├── sw-custom.js             # Service worker logic
@@ -601,9 +605,6 @@ npm install
 
 # Start development server
 npm run dev
-
-# Run local core regression tests
-npm test
 
 # Build for production
 npm run build

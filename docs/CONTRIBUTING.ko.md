@@ -190,6 +190,10 @@ async function handleFileUpload(file) {
 
 4. **푸시 및 PR 열기**
 
+스트림 처리를 변경할 때는 시작·재개 버퍼, EOF 시 큐 소진, 기존 이미지·인용 처리를 확인하세요. 브라우저 및 실제 서비스 검증 결과는 별도로 명시하세요.
+
+DOM·수식 상태를 변경할 때는 브라우저에서 노드 재사용, Markdown 구조 변경, 수식의 가로 스크롤을 확인하세요.
+
 **Pull Request 템플릿**
 
 ```markdown

@@ -135,6 +135,8 @@ LittleAIBox 非常适合：
 - **脑图渲染**: 支持基于 Markmap 的脑图渲染与预览
 - **图表导出**: 可下载生成的图表（Mermaid 图表和 Vega-Lite 可视化）为 PNG 或 SVG 文件
 - **GitHub 风格**: 完整的 GFM 语法支持
+- **流式配速**: 复用完整项目已有配速器，按文本到达情况和队列积压调整适配模型的输出节奏，其他模型保留回退打字路径
+- **富文本增量更新**: 复用完整项目已有 DOM 提交和公式状态机制，优先追加内容、保留可复用的已渲染节点，并在区域重建后恢复相同公式的横向滚动位置
 
 ### 🛠️ **高级 AI 功能**
 - **多种交互模式**：
@@ -539,6 +541,8 @@ LittleAIBox/
 │   ├── entitlements.js          # 订阅与能力门控
 │   ├── mindmap-mode.js          # 脑图模式运行时
 │   ├── stream-image-runtime.js  # 流式图片处理
+│   ├── stream-pacer.js         # 从完整项目同步的自适应流式配速器
+│   ├── stream-text-update.js   # 增量 DOM 更新规划与提交
 │   ├── sync-queue.js            # 离线重试/同步队列
 │   ├── router.js                # 客户端路由
 │   ├── sw-custom.js             # Service Worker 逻辑
@@ -601,9 +605,6 @@ npm install
 
 # 启动开发服务器
 npm run dev
-
-# 本地核心回归检查
-npm test
 
 # 构建生产版本
 npm run build

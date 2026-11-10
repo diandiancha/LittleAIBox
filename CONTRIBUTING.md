@@ -191,7 +191,7 @@ async function handleFileUpload(file) {
    git checkout -b feature/my-feature
    ```
 
-3. **Test changes** — run `npm test` and `npm run build`, then verify affected browser behavior
+3. **Test changes** — run `npm run build`, then verify affected browser behavior
 
 4. **Push & open PR**
 
@@ -199,6 +199,8 @@ async function handleFileUpload(file) {
 
 - Use the bundled Mermaid/KaTeX libraries and complete reported input for rendering fixes. Check normal syntax, code fences, Chinese labels, themes and stream completion.
 - For parsers, use sanitized documents and check text, image references, Worker execution and relevant fallback paths.
+- For streaming changes, check start/resume buffering, EOF draining and existing image/citation handling; report browser/live-service verification separately.
+- For DOM/formula-state changes, check node reuse, Markdown structure changes and horizontal formula scrolling in the browser.
 - For keyboard changes, state browsers/devices tested. Node tests and desktop resizing do not prove native keyboard behavior.
 - Explain actual checks and remaining verification boundaries in the PR; preserve frontend contracts when changing shared modules.
 - Keep backend implementations, subscription/payment rules, hosted routing, credentials, signing material and user data out of the repository. Architecture descriptions can still explain the complete project.

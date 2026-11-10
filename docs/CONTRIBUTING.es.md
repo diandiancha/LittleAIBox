@@ -190,6 +190,10 @@ async function handleFileUpload(file) {
 
 4. **Hacer push y abrir PR**
 
+Para cambios de streaming, compruebe el búfer de inicio/reanudación, el vaciado de la cola al llegar a EOF y el manejo existente de imágenes/citas. Indique por separado la verificación en navegadores y servicios reales.
+
+Para cambios del DOM o del estado de fórmulas, compruebe en el navegador la reutilización de nodos, los cambios de estructura de Markdown y el desplazamiento horizontal de fórmulas.
+
 **Plantilla de Pull Request**
 
 ```markdown
