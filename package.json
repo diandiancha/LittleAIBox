@@ -6,8 +6,7 @@
     "predev": "node scripts/copy-i18n.mjs",
     "prebuild": "node scripts/copy-i18n.mjs",
     "dev": "vite",
-    "build": "vite build",
-    "test": "node --test tests/*.test.mjs"
+    "build": "vite build"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

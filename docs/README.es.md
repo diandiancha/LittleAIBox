@@ -132,6 +132,8 @@ LittleAIBox es perfecto para:
 - **Renderizado Mindmap**: Soporte de renderizado y vista previa de mapas mentales basados en Markmap
 - **Exportación de Gráficos**: Descarga gráficos generados (diagramas Mermaid y visualizaciones Vega-Lite) como archivos PNG o SVG
 - **GitHub Flavored Markdown**: Soporte completo de GFM con resaltado de sintaxis
+- **Ritmo de Streaming**: Reutiliza el regulador del proyecto completo para ajustar la salida según las llegadas de texto y la cola en las familias de modelos compatibles, conservando la escritura de respaldo para otros modelos
+- **Contenido Enriquecido Incremental**: Reutiliza los auxiliares de actualización del DOM y estado de fórmulas del proyecto completo para añadir contenido, conservar nodos renderizados reutilizables y restaurar el desplazamiento horizontal de fórmulas coincidentes tras reemplazar una región
 
 ### 🛠️ **Características Avanzadas de IA**
 - **Múltiples Modos de Interacción**：
@@ -505,6 +507,8 @@ El sistema detecta y evita automáticamente restricciones regionales, claves inv
 LittleAIBox/
 ├── src/                    # Código fuente
 │   ├── main.js            # Lógica principal de la aplicación
+│   ├── stream-pacer.js    # Regulador adaptativo copiado del proyecto completo
+│   ├── stream-text-update.js # Planificación y aplicación de cambios incrementales del DOM
 │   ├── api-config.js      # Configuración de API
 │   ├── auth-oauth.js     # Autenticación OAuth (Google, GitHub)
 │   ├── auth-template.js  # Plantillas de UI de autenticación

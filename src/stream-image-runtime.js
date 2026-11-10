@@ -1,3 +1,5 @@
+import { createStreamPacer } from './stream-pacer.js';
+
 export function createStreamImageRuntime(deps = {}) {
     const {
         toAbsoluteImageUrl,
@@ -16,6 +18,10 @@ export function createStreamImageRuntime(deps = {}) {
     } = deps;
 
     const STREAM_RENDER_INTERVAL_MS = 30;
+    const STREAM_INITIAL_BUFFER_CHARS = 18;
+    const STREAM_RESUME_BUFFER_CHARS = 10;
+    const STREAM_INITIAL_BUFFER_WAIT_MS = 140;
+    const STREAM_RESUME_BUFFER_WAIT_MS = 90;
     const STREAM_IMAGE_URL_PATTERN = /(https?:\/\/[^\s<>"')\]]+)/gi;
     const STREAM_MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(([^)\s]+(?:\?[^)\s]*)?)\)/gi;
     const STREAM_IMAGE_EXT_PATTERN = /\.(png|jpe?g|webp|gif|bmp|svg|avif)(?:$|[?#])/i;
@@ -1068,8 +1074,8 @@ export function createStreamImageRuntime(deps = {}) {
         let hasClearedThinkingIndicator = false;
         const provisionalImageLayout = normalizeStreamImageLayout(options?.provisionalImageLayout || []);
         const usePendingImagePlaceholder = options?.usePendingImagePlaceholder !== false;
-        let firstTokenAt = null;
         let receivedDone = false;
+        let streamClosed = false;
 
         state.globalBackgroundBuffer = '';
         state.globalDisplayBuffer = '';
@@ -1102,9 +1108,29 @@ export function createStreamImageRuntime(deps = {}) {
 
         const charQueue = state.globalCharQueue;
         let isTyping = false;
-        let renderSpeed = getRenderSpeedForModel(getCurrentModelId());
+        const renderModelId = getCurrentModelId();
+        const renderSpeed = getRenderSpeedForModel(renderModelId);
+        const streamPacer = createStreamPacer(normalizeModelIdForRender(renderModelId), renderSpeed);
         let renderSpeedAccumulator = 0;
         const streamRenderInterval = STREAM_RENDER_INTERVAL_MS;
+        let hasTypingStarted = false;
+        let typingStartTimer = null;
+
+        const clearTypingStartTimer = () => {
+            if (typingStartTimer === null) return;
+            clearTimeout(typingStartTimer);
+            typingStartTimer = null;
+        };
+
+        const drainQueuedTextWithoutRendering = () => {
+            if (charQueue.length > 0) {
+                state.globalDisplayBuffer += charQueue.splice(0, charQueue.length).join('');
+            }
+            isTyping = false;
+            renderSpeedAccumulator = 0;
+            streamPacer?.resetRenderClock();
+            clearTypingStartTimer();
+        };
 
         let lastRenderTime = 0;
 
@@ -1123,13 +1149,11 @@ export function createStreamImageRuntime(deps = {}) {
             } else {
                 charQueue.push(chunk);
             }
-            if (!firstTokenAt) firstTokenAt = Date.now();
-            if (!isTyping) {
-                const isGeminiModel = normalizeModelIdForRender(getCurrentModelId()).toLowerCase().startsWith('gemini-');
-                const minBufferChars = isGeminiModel ? 12 : 24;
-                const maxWaitMs = isGeminiModel ? 200 : 350;
-                const ready = charQueue.length >= minBufferChars || (Date.now() - firstTokenAt) > maxWaitMs;
-                if (ready) startTyping();
+            streamPacer?.recordArrival(splitByChar ? chunk.length : 1);
+            if (!getIsPageVisible()) {
+                drainQueuedTextWithoutRendering();
+            } else if (!isTyping) {
+                scheduleTypingStart();
             }
         };
 
@@ -1349,24 +1373,40 @@ export function createStreamImageRuntime(deps = {}) {
 
         const startTyping = () => {
             if (isTyping) return;
+            clearTypingStartTimer();
+            hasTypingStarted = true;
             isTyping = true;
+            streamPacer?.resetRenderClock();
             const renderLoop = () => {
+                if (!getIsPageVisible()) {
+                    drainQueuedTextWithoutRendering();
+                    return;
+                }
                 if (charQueue.length === 0) {
                     isTyping = false;
                     renderSpeedAccumulator = 0;
                     return;
                 }
 
-                let currentRenderSpeed = renderSpeed;
-                if (charQueue.length > 100) {
-                    currentRenderSpeed = Math.min(renderSpeed * 3, 6);
-                } else if (charQueue.length > 50) {
-                    currentRenderSpeed = Math.min(renderSpeed * 2, 4);
-                }
+                let charsToRenderCount;
+                if (streamPacer) {
+                    charsToRenderCount = streamPacer.take(charQueue.length, receivedDone || streamClosed);
+                } else {
+                    let currentRenderSpeed = renderSpeed;
+                    if (!receivedDone && charQueue.length < STREAM_RESUME_BUFFER_CHARS) {
+                        currentRenderSpeed = Math.max(0.75, renderSpeed * 0.7);
+                    } else if (charQueue.length > 160) {
+                        currentRenderSpeed = Math.min(renderSpeed * 4, 8);
+                    } else if (charQueue.length > 80) {
+                        currentRenderSpeed = Math.min(renderSpeed * 2.5, 5);
+                    } else if (charQueue.length > 36) {
+                        currentRenderSpeed = Math.min(renderSpeed * 1.5, 3);
+                    }
 
-                renderSpeedAccumulator += currentRenderSpeed;
-                const charsToRenderCount = Math.floor(renderSpeedAccumulator);
-                renderSpeedAccumulator -= charsToRenderCount;
+                    renderSpeedAccumulator += currentRenderSpeed;
+                    charsToRenderCount = Math.floor(renderSpeedAccumulator);
+                    renderSpeedAccumulator -= charsToRenderCount;
+                }
 
                 const charsToRender = charQueue.splice(0, charsToRenderCount).join('');
                 state.globalDisplayBuffer += charsToRender;
@@ -1415,13 +1455,18 @@ export function createStreamImageRuntime(deps = {}) {
                     state.globalBackgroundBuffer += charsToRender;
                 }
 
-                setTimeout(() => {
-                    if (getIsPageVisible()) {
-                        requestAnimationFrame(renderLoop);
-                    } else {
-                        renderLoop();
-                    }
-                }, renderSpeed === 1 ? 25 : 16);
+                if (streamPacer) {
+                    // 配速器按实际时间控制吐字，直接跟随动画帧，避免额外定时等待。
+                    requestAnimationFrame(renderLoop);
+                } else {
+                    setTimeout(() => {
+                        if (getIsPageVisible()) {
+                            requestAnimationFrame(renderLoop);
+                        } else {
+                            renderLoop();
+                        }
+                    }, renderSpeed === 1 ? 25 : 16);
+                }
             };
 
             if (getIsPageVisible()) {
@@ -1429,6 +1474,27 @@ export function createStreamImageRuntime(deps = {}) {
             } else {
                 setTimeout(renderLoop, 0);
             }
+        };
+
+        const scheduleTypingStart = () => {
+            if (isTyping || charQueue.length === 0) return;
+            const minBufferChars = hasTypingStarted
+                ? (streamPacer?.resumeBufferChars ?? STREAM_RESUME_BUFFER_CHARS)
+                : (streamPacer?.initialBufferChars ?? STREAM_INITIAL_BUFFER_CHARS);
+            if (receivedDone || streamClosed || charQueue.length >= minBufferChars) {
+                startTyping();
+                return;
+            }
+            if (typingStartTimer !== null) return;
+            const waitMs = hasTypingStarted
+                ? (streamPacer?.resumeWaitMs ?? STREAM_RESUME_BUFFER_WAIT_MS)
+                : (streamPacer?.initialWaitMs ?? STREAM_INITIAL_BUFFER_WAIT_MS);
+            typingStartTimer = setTimeout(() => {
+                typingStartTimer = null;
+                if (!isTyping && charQueue.length > 0) {
+                    startTyping();
+                }
+            }, waitMs);
         };
 
         const processLine = (dataStr) => {
@@ -1502,6 +1568,7 @@ export function createStreamImageRuntime(deps = {}) {
             const { value, done } = await reader.read();
 
             if (done) {
+                streamClosed = true;
                 if (buffer.trim()) {
                     const dataStr = buffer.trim().startsWith('data: ') ? buffer.trim().substring(6) : buffer.trim();
                     processLine(dataStr);
@@ -1525,12 +1592,12 @@ export function createStreamImageRuntime(deps = {}) {
             }
         }
 
-        if (!isTyping && charQueue.length > 0) startTyping();
-
         if (streamTagBuffer) {
             appendVisibleTextDelta(streamTagBuffer);
             streamTagBuffer = '';
         }
+
+        if (!isTyping && charQueue.length > 0) startTyping();
 
         await new Promise(resolve => {
             const checkTyping = () => {
@@ -1560,6 +1627,7 @@ export function createStreamImageRuntime(deps = {}) {
             };
             checkTyping();
         });
+        clearTypingStartTimer();
         scrollManager.exitStreamingMode();
         const interrupted = !receivedDone && fullResponse.length > 0;
         const collectedParts = Array.from(collectedImageUrls).map((url) => ({

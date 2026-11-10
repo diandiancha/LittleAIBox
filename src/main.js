@@ -42,6 +42,8 @@ import { formatRelayModelLabel } from './relay-models.js';
 import router, { DEFAULT_SETTINGS_SECTION, DEFAULT_SUBSCRIPTION_SECTION } from './router.js';
 import { handleFinalRenderAutoFollow, ScrollManager } from './scroll-manager.js';
 import { createStreamImageRuntime } from './stream-image-runtime.js';
+import { planStreamingContentUpdate, commitStreamingContentUpdate } from './stream-text-update.js';
+import { captureDisplayMathState, restoreDisplayMathState } from './mathrender/display-math-state.js';
 import './style.css';
 import './keyboard/keyboard.css';
 import { setupMainKeyboard } from './keyboard/main-keyboard.js';
@@ -13200,7 +13202,9 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             }
         }
 
+        let displayMathState = null;
         if (!renderState.lockedContainer || !renderState.streamingContainer || !element.contains(renderState.lockedContainer)) {
+            displayMathState = captureDisplayMathState(element, [element]);
             const preservedStreamImageNodes = Array.from(element.querySelectorAll('.stream-image-attachments'));
             element.innerHTML = '';
             renderState.lockedContainer = document.createElement('div');
@@ -13284,33 +13288,21 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             }
         };
 
+        const lockedUpdate = planStreamingContentUpdate(renderState.lockedContainer, renderState.lastLockedHtml, renderState.lockedHtml);
+        const streamingUpdate = planStreamingContentUpdate(renderState.streamingContainer, renderState.streamingHtml, streamingHtml);
+        const replacedRoots = [lockedUpdate, streamingUpdate].flatMap(update => {
+            if (update.kind === 'replace-region') return [update.container];
+            if (update.kind === 'replace-tail') return update.removedNodes;
+            return [];
+        });
+        displayMathState ||= captureDisplayMathState(element, replacedRoots);
         if (renderState.lastLockedHtml !== renderState.lockedHtml) {
-            let contentChanged = false;
-            if (renderState.lockedHtml.startsWith(renderState.lastLockedHtml)) {
-                const delta = renderState.lockedHtml.slice(renderState.lastLockedHtml.length);
-                if (delta) {
-                    renderState.lockedContainer.insertAdjacentHTML('beforeend', delta);
-                    contentChanged = true;
-                }
-            } else {
-                renderState.lockedContainer.innerHTML = renderState.lockedHtml;
-                contentChanged = true;
-            }
+            commitStreamingContentUpdate(lockedUpdate);
             renderState.lastLockedHtml = renderState.lockedHtml;
         }
 
         if (renderState.streamingHtml !== streamingHtml) {
-            let contentChanged = false;
-            if (streamingHtml.startsWith(renderState.streamingHtml)) {
-                const delta = streamingHtml.slice(renderState.streamingHtml.length);
-                if (delta) {
-                    renderState.streamingContainer.insertAdjacentHTML('beforeend', delta);
-                    contentChanged = true;
-                }
-            } else {
-                renderState.streamingContainer.innerHTML = streamingHtml;
-                contentChanged = true;
-            }
+            commitStreamingContentUpdate(streamingUpdate);
             renderState.streamingHtml = streamingHtml;
         }
 
@@ -13614,6 +13606,8 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
                 }
             });
         }
+
+        restoreDisplayMathState(element, displayMathState);
 
         handleFinalRenderAutoFollow({
             isFinalRender,

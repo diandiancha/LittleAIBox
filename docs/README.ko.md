@@ -132,6 +132,8 @@ LittleAIBox는 다음 사용자에게 완벽합니다:
 - **Mindmap 렌더링**: Markmap 기반 마인드맵 렌더링 및 미리보기
 - **차트 내보내기**: 생성된 차트(Mermaid 다이어그램 및 Vega-Lite 시각화)를 PNG 또는 SVG 파일로 다운로드 가능
 - **GitHub 스타일**: 구문 강조가 포함된 완전한 GFM 지원
+- **스트림 속도 조절**: 전체 프로젝트의 기존 페이서를 재사용하여 지원 모델의 텍스트 도착과 큐 적체에 따라 출력 속도를 조절하고, 다른 모델의 폴백 타이핑 경로는 유지
+- **리치 콘텐츠 증분 갱신**: 전체 프로젝트의 DOM 갱신 및 수식 상태 헬퍼를 재사용하여 콘텐츠를 추가하고 재사용 가능한 렌더링 노드를 유지하며, 영역 재구성 후 같은 수식의 가로 스크롤을 복원
 
 ### 🛠️ **고급 AI 기능**
 - **다양한 상호작용 모드**：
@@ -505,6 +507,8 @@ flowchart TB
 LittleAIBox/
 ├── src/                    # 소스 코드
 │   ├── main.js            # 메인 애플리케이션 로직
+│   ├── stream-pacer.js    # 전체 프로젝트에서 가져온 적응형 출력 페이서
+│   ├── stream-text-update.js # 증분 DOM 갱신 계획 및 반영
 │   ├── api-config.js      # API 설정
 │   ├── auth-oauth.js     # OAuth 인증 (Google, GitHub)
 │   ├── auth-template.js  # 인증 UI 템플릿

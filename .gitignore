@@ -9,6 +9,9 @@ keystore.properties
 # Node modules
 node_modules/
 
+# Local validation fixtures are not part of the public snapshot.
+/tests/
+
 # Build outputs
 dist/
 .wrangler/
