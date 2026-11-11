@@ -49,6 +49,7 @@ import './keyboard/keyboard.css';
 import { setupMainKeyboard } from './keyboard/main-keyboard.js';
 import { KATEX_CONFIG, MathRenderer } from './mathrender/math-renderer.js';
 import { protectMarkdownMathPlaceholders } from './mathrender/markdown-math-protection.js';
+import { installCjkFriendlyEmphasis } from './mathrender/markdown-cjk-emphasis.js';
 import { wrapStandaloneMermaidDefinition } from './rendering/mermaid-source-normalizer.js';
 import {
     loadPersistentQueue,
@@ -12995,6 +12996,7 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             return null;
         }
 
+        installCjkFriendlyEmphasis(window.marked);
         let html = marked.parse(contentToParse);
 
         // 更新缓存
@@ -20729,6 +20731,7 @@ function showFileViewer(filename, content, meta = null) {
                 let htmlToRender = content;
                 const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(content);
                 if (!looksLikeHtml) {
+                    installCjkFriendlyEmphasis(window.marked);
                     htmlToRender = marked.parse(content, { breaks: true });
                 }
 

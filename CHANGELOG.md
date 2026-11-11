@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — CJK Markdown emphasis sync
+
+- Copied `src/mathrender/markdown-cjk-emphasis.js` unchanged from the complete project and installed it at the existing chat and Markdown file-preview parsing entrypoints.
+- Support the original extension's CJK emphasis boundary cases, such as `前文**（重点）**后文`, while retaining its existing scope and fallback behavior.
+- Retained the bundled Marked version, code/math protection and HTML sanitization flow; no backend or commercial implementation is included.
+- Added a brief feature description to all six README languages. Validation fixtures remain local under ignored `tests/`.
+
 ## Unreleased — Stream rendering core sync
 
 - Copied `src/stream-pacer.js` from the complete project without changing its implementation.
