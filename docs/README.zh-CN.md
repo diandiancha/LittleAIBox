@@ -136,6 +136,7 @@ LittleAIBox 非常适合：
 - **图表导出**: 可下载生成的图表（Mermaid 图表和 Vega-Lite 可视化）为 PNG 或 SVG 文件
 - **GitHub 风格**: 完整的 GFM 语法支持
 - **中日韩强调兼容**: 复用完整项目已有 Marked 扩展，兼容连续文字与标点相邻时的部分粗体/斜体边界
+- **Canvas 画布**: 流式卡片、源码查看/编辑/复制，以及 HTML、Markdown、SVG、React/Vue 组件、p5 和 Markmap 独立预览；支持桌面分栏与移动端抽屉。其他语言类型提供源码查看和高亮，不表示可执行任意语言。生成画布需要兼容后端，使用 `context_mode: "canvas"` 和 `<canvasmode type="…" title="…">…</canvasmode>` 响应协议。
 - **流式配速**: 复用完整项目已有配速器，按文本到达情况和队列积压调整适配模型的输出节奏，其他模型保留回退打字路径
 - **富文本增量更新**: 复用完整项目已有 DOM 提交和公式状态机制，优先追加内容、保留可复用的已渲染节点，并在区域重建后恢复相同公式的横向滚动位置
 
@@ -163,7 +164,7 @@ LittleAIBox 非常适合：
 ### 📌 **开源范围说明**
 - **前端开源包**: 本仓库仅包含开源前端实现，订阅/支付后端已省略
 - **服务依赖功能**: 登录、云同步、搜索和模型回复需要兼容服务，前端存在入口不代表仓库自带对应后端
-- **快照范围**: 独立维护应用中的 Canvas 与娱乐模块不在本轮核心同步范围内
+- **快照范围**: 已同步 Canvas 前端画布；娱乐模块及新版会话/专用路由集成仍未包含
 
 ### 🌐 **多语言支持**
 - **7 份语言目录**: 简体中文、繁体中文、英语、日语、韩语、西班牙语、法语
@@ -230,11 +231,12 @@ flowchart TB
         end
         subgraph PRESENTATION["流式显示与生产力"]
             F_STREAM["响应流 / 节奏控制 / 增量更新"]
+            F_CANVAS["Canvas：源码 / 编辑 / 独立预览"]
             F_MARKDOWN["Markdown / 高亮 / 公式保护"]
             F_CHARTS["KaTeX / Mermaid / Vega / 脑图"]
             F_IMAGE_VIEW["CID 还原 / 生成图片布局"]
             F_EXPORT["Word / Excel / PPT / PDF 导出"]
-            F_EXTENSIONS["Canvas / 娱乐扩展：本轮未同步"]
+            F_EXTENSIONS["娱乐扩展：未同步"]
         end
         subgraph CLIENT_STATE["会话与本地数据"]
             F_CHAT["对话 / 轮次 / 消息标识"]
@@ -321,6 +323,8 @@ flowchart TB
     F_RETRIEVAL --> B_GATEWAY
     B_MODEL --> F_STREAM
     F_STREAM --> F_MARKDOWN
+    F_STREAM --> F_CANVAS
+    F_CANVAS --> F_EXPORT
     F_MARKDOWN --> F_CHARTS
     F_STREAM --> F_IMAGE_VIEW
     F_CHARTS --> F_ENTRY
@@ -373,7 +377,7 @@ flowchart TB
     class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
     class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
     class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
-    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_STREAM,F_CANVAS,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
     class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
     class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
     class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage
@@ -431,7 +435,7 @@ flowchart TB
 
 ### 📦 本次公开前端更新
 
-3.1.0 将选定的 Mermaid/Vega、公式、文档解析/Worker 和键盘机制接入已有公开应用，保留旧版会话与存储集成。它不代表已同步独立运营服务的全部源码或功能。
+3.1.0 将选定的 Mermaid/Vega、公式、文档解析/Worker、键盘和 Canvas 机制接入已有公开应用，保留旧版会话与存储集成。它不代表已同步独立运营服务的全部源码或功能。
 
 ### 🛡️ 后端架构
 

@@ -20,6 +20,33 @@ function splitFenceAwareLines(text, transformLine) {
     }).join('\n');
 }
 
+export function findMathBlockLineIndexes(text) {
+    const source = String(text || '');
+    const lineIndexes = new Set();
+    if (!source.includes('$$') && !source.includes('\\[')) return lineIndexes;
+
+    const fencedRanges = findFencedCodeRanges(source);
+    const ranges = [...findDisplayMathRegions(source, fencedRanges).ranges];
+    const bracketMathRegex = /\\\[[\s\S]*?\\\]/g;
+    let match;
+    while ((match = bracketMathRegex.exec(source)) !== null) {
+        const start = match.index;
+        if (fencedRanges.some(range => start >= range.start && start < range.end)) continue;
+        ranges.push({ start, end: start + match[0].length });
+    }
+    if (!ranges.length) return lineIndexes;
+
+    let lineStart = 0;
+    source.split('\n').forEach((line, index) => {
+        const lineEnd = lineStart + line.length;
+        if (ranges.some(range => lineStart < range.end && lineEnd > range.start)) {
+            lineIndexes.add(index);
+        }
+        lineStart = lineEnd + 1;
+    });
+    return lineIndexes;
+}
+
 export function normalizeLatexEnvironments(text) {
     const source = String(text || '');
     const fencedRanges = findFencedCodeRanges(source);
@@ -72,6 +99,7 @@ export function looksLikeChemicalEquation(text) {
     const value = String(text || '').trim();
     if (value.length < 3) return false;
     if (/[`$]/u.test(value) || /\\ce\s*\{/u.test(value)) return false;
+    if (/\\[A-Za-z]/u.test(value)) return false;
     if (/[\u3400-\u9fff]/u.test(value)) return false;
     if (/^\d+\s*[.)、:：]\s*/u.test(value) || /^[-*+]\s+/u.test(value)) return false;
     if (/[A-Za-z]+\/[A-Za-z+]+/u.test(value)) return false;
@@ -84,7 +112,9 @@ export function looksLikeChemicalEquation(text) {
 }
 
 export function wrapBareChemicalLines(text) {
-    return splitFenceAwareLines(text, (line) => {
+    const mathBlockLines = findMathBlockLineIndexes(text);
+    return splitFenceAwareLines(text, (line, { index } = {}) => {
+        if (mathBlockLines.has(index)) return line;
         const trimmed = line.trim();
         if (!looksLikeChemicalEquation(trimmed)) return line;
 

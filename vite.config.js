@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
+import { createApplicationChunks } from './scripts/build-chunk-policy.mjs';
 
 const appBuildId = process.env.APP_BUILD_ID ||
     process.env.VERCEL_GIT_COMMIT_SHA ||
@@ -28,12 +30,8 @@ export default defineConfig({
                 main: 'index.html'
             },
             output: {
-                manualChunks: (id) => {
-                    if (id.includes('node_modules')) {
-                        return 'vendor';
-                    }
-                    return undefined;
-                }
+                onlyExplicitManualChunks: true,
+                manualChunks: createApplicationChunks(fileURLToPath(new URL('./src/main.js', import.meta.url)))
             }
         }
     },

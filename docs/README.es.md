@@ -133,6 +133,7 @@ LittleAIBox es perfecto para:
 - **Exportación de Gráficos**: Descarga gráficos generados (diagramas Mermaid y visualizaciones Vega-Lite) como archivos PNG o SVG
 - **GitHub Flavored Markdown**: Soporte completo de GFM con resaltado de sintaxis
 - **Compatibilidad de Énfasis CJK**: Reutiliza la extensión Marked del proyecto completo para ciertos límites de negrita y cursiva junto a texto y puntuación CJK
+- **Espacio Canvas**: Tarjetas en streaming, consulta/edición/copia del código y vistas previas aisladas de HTML, Markdown, SVG, componentes React/Vue, p5 y Markmap; vista dividida en escritorio y panel móvil. Los demás lenguajes ofrecen consulta y resaltado, no ejecución arbitraria. La generación requiere un backend compatible con `context_mode: "canvas"` y respuestas `<canvasmode type="…" title="…">…</canvasmode>`.
 - **Ritmo de Streaming**: Reutiliza el regulador del proyecto completo para ajustar la salida según las llegadas de texto y la cola en las familias de modelos compatibles, conservando la escritura de respaldo para otros modelos
 - **Contenido Enriquecido Incremental**: Reutiliza los auxiliares de actualización del DOM y estado de fórmulas del proyecto completo para añadir contenido, conservar nodos renderizados reutilizables y restaurar el desplazamiento horizontal de fórmulas coincidentes tras reemplazar una región
 
@@ -219,11 +220,12 @@ flowchart TB
         end
         subgraph PRESENTATION["Streaming and productivity"]
             F_STREAM["Response stream / pacing / incremental DOM"]
+            F_CANVAS["Canvas: source / editing / isolated preview"]
             F_MARKDOWN["Markdown / highlighting / math protection"]
             F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
             F_IMAGE_VIEW["CID resolution / generated image layout"]
             F_EXPORT["Word / Excel / PPT / PDF export"]
-            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+            F_EXTENSIONS["Entertainment extensions: not synced"]
         end
         subgraph CLIENT_STATE["Conversation and local state"]
             F_CHAT["Conversations / turns / message identity"]
@@ -310,6 +312,8 @@ flowchart TB
     F_RETRIEVAL --> B_GATEWAY
     B_MODEL --> F_STREAM
     F_STREAM --> F_MARKDOWN
+    F_STREAM --> F_CANVAS
+    F_CANVAS --> F_EXPORT
     F_MARKDOWN --> F_CHARTS
     F_STREAM --> F_IMAGE_VIEW
     F_CHARTS --> F_ENTRY
@@ -362,7 +366,7 @@ flowchart TB
     class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
     class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
     class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
-    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_STREAM,F_CANVAS,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
     class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
     class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
     class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage

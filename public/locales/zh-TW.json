@@ -36,6 +36,9 @@
     "continueAsGuest": "以訪客身份繼續體驗",
     "guestContinueLegalNotice": "使用本服務即代表同意隱私政策和服務條款",
     "common": {
+        "previous": "上一個",
+        "next": "下一個",
+        "open": "開啟",
         "cancel": "取消",
         "confirm": "確定",
         "ok": "確定",
@@ -198,6 +201,8 @@
         }
     },
     "toast": {
+        "canvasModeOn": "畫布模式已開啟",
+        "canvasModeOff": "畫布模式已關閉",
         "exportInProgress": "正在進行匯出操作，\n請勿操作頁面",
         "storagePermissionRequired": "請在系統設定中授予儲存權限",
         "grantStoragePermission": "請授予儲存權限以儲存圖片",
@@ -525,6 +530,9 @@
         "slide": "投影片"
     },
     "ui": {
+        "canvasMode": "畫布模式",
+        "preview": "預覽",
+        "code": "程式碼",
         "appTitle": "LittleAIBox",
         "appSubtitle": "隱私優先的AI對話平台",
         "loadingCoreResources": "正在載入核心資源...",

@@ -136,6 +136,7 @@ These screenshots illustrate earlier interface versions; individual controls may
 - **Chart Export**: Download generated charts (Mermaid diagrams and Vega-Lite visualizations) as PNG or SVG files
 - **GitHub Flavored Markdown**: Full GFM support with syntax highlighting
 - **CJK Emphasis Compatibility**: Reuses the complete project's Marked extension for supported bold/italic boundaries next to CJK text and punctuation
+- **Canvas Workbench**: Streamed artifact cards, source editing/copy and isolated previews for HTML, Markdown, SVG, React/Vue components, p5 and Markmap; desktop split view and a mobile drawer. Other language types provide source viewing/highlighting, not arbitrary-language execution. Generation requires a compatible backend using `context_mode: "canvas"` and `<canvasmode type="…" title="…">…</canvasmode>` responses.
 - **Stream Pacing**: Reuses the complete project's pacer to adjust output to text arrivals and queue length for supported model families, with fallback typing for other models
 - **Incremental Rich Content**: Reuses the complete project's DOM update and formula-state helpers to append content, retain reusable rendered nodes and restore matching formulas' horizontal scroll after region replacement
 
@@ -163,7 +164,7 @@ These screenshots illustrate earlier interface versions; individual controls may
 ### 📌 **Open-Source Scope**
 - **Frontend-Only Package**: This repository ships the open-source frontend; subscription/payment backends are omitted
 - **Service-Backed Features**: Login, cloud sync, search and model replies require compatible services; a frontend control does not supply its backend
-- **Snapshot Scope**: Canvas and entertainment modules from the separately maintained application are outside this core refresh
+- **Snapshot Scope**: The Canvas frontend workbench is included; entertainment modules and the newer session/route integration remain outside this refresh
 
 ### 🌐 **Multi-Language Support**
 - **7 Locale Catalogs**: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Spanish and French
@@ -230,11 +231,12 @@ flowchart TB
         end
         subgraph PRESENTATION["Streaming and productivity"]
             F_STREAM["Response stream / pacing / incremental DOM"]
+            F_CANVAS["Canvas: source / editing / isolated preview"]
             F_MARKDOWN["Markdown / highlighting / math protection"]
             F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
             F_IMAGE_VIEW["CID resolution / generated image layout"]
             F_EXPORT["Word / Excel / PPT / PDF export"]
-            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+            F_EXTENSIONS["Entertainment extensions: not synced"]
         end
         subgraph CLIENT_STATE["Conversation and local state"]
             F_CHAT["Conversations / turns / message identity"]
@@ -321,6 +323,8 @@ flowchart TB
     F_RETRIEVAL --> B_GATEWAY
     B_MODEL --> F_STREAM
     F_STREAM --> F_MARKDOWN
+    F_STREAM --> F_CANVAS
+    F_CANVAS --> F_EXPORT
     F_MARKDOWN --> F_CHARTS
     F_STREAM --> F_IMAGE_VIEW
     F_CHARTS --> F_ENTRY
@@ -373,7 +377,7 @@ flowchart TB
     class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
     class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
     class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
-    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_STREAM,F_CANVAS,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
     class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
     class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
     class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage
@@ -431,7 +435,7 @@ All file parsing and processing happens entirely in the browser:
 
 ### 📦 Public Frontend Core Refresh
 
-Version 3.1.0 updates selected Mermaid/Vega, math, document parser/Worker and keyboard mechanisms in the existing public application. It retains the older conversation/storage integration; it does not claim complete source or feature parity with the separately maintained service.
+Version 3.1.0 updates selected Mermaid/Vega, math, document parser/Worker, keyboard and Canvas mechanisms in the existing public application. It retains the older conversation/storage integration; it does not claim complete source or feature parity with the separately maintained service.
 
 ### 🛡️ Backend Architecture
 

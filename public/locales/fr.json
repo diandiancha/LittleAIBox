@@ -36,6 +36,9 @@
     "continueAsGuest": "Continuer en tant qu'invité",
     "guestContinueLegalNotice": "En utilisant ce service, vous acceptez la Politique de confidentialité et les Conditions d'utilisation.",
     "common": {
+        "previous": "Précédent",
+        "next": "Suivant",
+        "open": "Ouvrir",
         "cancel": "Annuler",
         "confirm": "Confirmer",
         "ok": "OK",
@@ -198,6 +201,8 @@
         }
     },
     "toast": {
+        "canvasModeOn": "Mode canevas activé",
+        "canvasModeOff": "Mode canevas désactivé",
         "exportInProgress": "Exportation en cours,\nveuillez ne pas manipuler la page",
         "exportFileFailed": "Échec de l'exportation, veuillez réessayer",
         "subscriptionCancelSuccess": "Le renouvellement automatique est désactivé.\nL'accès reste actif jusqu'à la fin de la période",
@@ -525,6 +530,9 @@
         "slide": "Diapositive"
     },
     "ui": {
+        "canvasMode": "Mode canevas",
+        "preview": "Aperçu",
+        "code": "Code",
         "exportFormatTitle": "Choisir le format d'exportation",
         "exportRoleAssistant": "Assistant",
         "exportRoleUser": "Utilisateur",

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Canvas workbench sync
+
+- Copied the complete project's Canvas cards, source editor, code chunks/highlight Worker, drawer lifecycle and preview registry. Included HTML, SVG, Markdown, React/Vue component, p5 and Markmap preview renderers and their existing local runtime assets.
+- Ported Canvas mode selection and the `context_mode: "canvas"` request flag, protocol normalization, stable message/artifact identity and source-preserving export into the public frontend. Generation still requires a compatible backend; no model service or commercial implementation is included.
+- Copied the generic streaming runtime and required frontend helpers; retained a small compatibility adapter for the public snapshot's existing stream/image callers. Updated the Markdown/math helpers needed by the copied preview runtime and adapted its chart-renderer import paths.
+- Copied existing Canvas/sideloading layout styles and the application chunk policy; connected close/theme handling to the older public UI. Dedicated Canvas deep links and the newer conversation/cloud integration are outside this migration.
+- Added Canvas labels from the complete project to all seven existing UI locales. Updated the six README languages and their architecture diagrams without adding a standalone feature guide.
+- Validated with local Node checks, desktop/mobile Chrome fixtures using simulated backend responses and the production Vite/PWA build. Fixtures and screenshots remain local under ignored `tests/`.
+
 ## Unreleased — CJK Markdown emphasis sync
 
 - Copied `src/mathrender/markdown-cjk-emphasis.js` unchanged from the complete project and installed it at the existing chat and Markdown file-preview parsing entrypoints.

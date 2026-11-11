@@ -27,7 +27,7 @@ export function setupMainKeyboard({ root, scrollContainer, scrollManager }) {
         root,
         inputSelector: '#message-input',
         ignoreSelector: '.input-wrapper, .input-outer-wrapper, #chat-container',
-        touchMoveSelector: '#chat-container, .input-wrapper, .input-outer-wrapper',
+        touchMoveSelector: '#chat-container, .input-wrapper, .input-outer-wrapper, .canvas-drawer, .canvas-drawer-code, .canvas-code-scroll, .canvas-drawer-preview',
         onWillChange: () => { anchor = capture(); },
         onChanged: () => {
             restore(anchor);

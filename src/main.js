@@ -42,6 +42,9 @@ import { formatRelayModelLabel } from './relay-models.js';
 import router, { DEFAULT_SETTINGS_SECTION, DEFAULT_SUBSCRIPTION_SECTION } from './router.js';
 import { handleFinalRenderAutoFollow, ScrollManager } from './scroll-manager.js';
 import { createStreamImageRuntime } from './stream-image-runtime.js';
+import { closeCanvasDrawer, enhanceCanvasBlocks, isCanvasDrawerOpen, reloadCanvasDrawerPreview } from './canvas/canvas-drawer-renderer.js';
+import { decodeCanvasAttribute, getCanvasFenceLanguage, normalizeCanvasType } from './canvas/canvas-utils.js';
+import './canvas/canvas.css';
 import { planStreamingContentUpdate, commitStreamingContentUpdate } from './stream-text-update.js';
 import { captureDisplayMathState, restoreDisplayMathState } from './mathrender/display-math-state.js';
 import './style.css';
@@ -925,6 +928,10 @@ class NavigationEngine {
                 return;
             }
         } catch (_) { }
+        if (isCanvasDrawerOpen()) {
+            closeCanvasDrawer(true, { routeHandled: true });
+            return;
+        }
         if (this.isSidebarOpen()) {
             this.closeSidebar(true);
             if (this.isOnChatPage()) {
@@ -2868,7 +2875,7 @@ function normalizeMessageContentForExport(message) {
         }
         return extractTextFromUserContent(content);
     }
-    if (typeof content === 'string') return content;
+    if (typeof content === 'string') return expandCanvasProtocolForExport(content);
     if (Array.isArray(content) || (content && Array.isArray(content.content))) {
         return extractTextFromUserContent(content);
     }
@@ -3602,6 +3609,7 @@ let isImageModeActive = false;
 let isSearchModeActive = false;
 let isResearchModeActive = false;
 let isMindmapModeActive = false;
+let isCanvasModeActive = false;
 let filesCurrentlyProcessing = 0;
 let attachmentIdCounter = 0;
 let activeResponses = new Map();
@@ -4366,6 +4374,7 @@ function populateElements() {
     elements.toolSearchOption = document.getElementById('tool-search-option');
     elements.toolImageOption = document.getElementById('tool-image-option');
     elements.toolResearchOption = document.getElementById('tool-research-option');
+    elements.toolCanvasOption = document.getElementById('tool-canvas-option');
     elements.voiceBtn = document.getElementById('voice-btn');
     elements.modelSelectBtn = document.getElementById('model-select-btn');
     elements.selectedModelName = document.getElementById('selected-model-name');
@@ -4476,6 +4485,7 @@ async function applyTheme(themeSettings) {
     if (!themeSettings) {
         document.documentElement.setAttribute('data-theme', 'light');
         document.documentElement.style.setProperty('--app-font-family', FONT_MAP['system']);
+        reloadCanvasDrawerPreview();
         return;
     };
 
@@ -4487,6 +4497,7 @@ async function applyTheme(themeSettings) {
     // 应用字体
     const fontFamily = FONT_MAP[font] || FONT_MAP['system'];
     document.documentElement.style.setProperty('--app-font-family', fontFamily);
+    reloadCanvasDrawerPreview();
 
     if (font && font !== 'system') {
         try {
@@ -5349,6 +5360,22 @@ function dismissKeyboard() {
                 document.activeElement.blur();
             }
         });
+    }
+}
+
+function dismissKeyboardForCanvasDrawerOpen() {
+    const active = document.activeElement;
+    const isEditableActive = active?.matches?.('textarea, input, [contenteditable="true"]') ||
+        !!active?.closest?.('[contenteditable="true"]');
+    const shouldDismiss =
+        isNativeApp ||
+        window.matchMedia('(pointer: coarse)').matches ||
+        document.body.classList.contains('keyboard-is-open') ||
+        document.activeElement === elements.messageInput ||
+        isEditableActive;
+
+    if (shouldDismiss) {
+        dismissKeyboard();
     }
 }
 
@@ -11331,6 +11358,7 @@ async function callValidationEndpoint(apiKey, model) {
 }
 
 async function loadChat(chatId) {
+    closeCanvasDrawer(false, { routeHandled: true });
     ensureInlineEditModeClosed();
 
     if (currentChatId && currentChatId.startsWith('temp_') && currentChatId !== chatId) {
@@ -11661,6 +11689,7 @@ function showEmptyState(forceLanguage = null) {
 }
 
 async function startNewChat(skipProcessingCheck = false) {
+    closeCanvasDrawer(false, { routeHandled: true });
     ensureInlineEditModeClosed();
 
     if (currentChatId && currentChatId.startsWith('temp_') && chats[currentChatId]?.messages.length === 0) {
@@ -12757,6 +12786,173 @@ async function hydrateCidImages(container) {
     }
 }
 
+function unwrapCanvasProtocolCodeFences(rawText = '') {
+    let text = String(rawText || '');
+
+    text = text.replace(
+        /(^|\n)([ \t]{0,3})(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g,
+        (match, prefix, indent, fence, info, body) => {
+            if (!/<canvasmode\b/i.test(body)) {
+                return match;
+            }
+            return `${prefix}${body}`;
+        }
+    );
+
+    text = text.replace(
+        /(^|\n)([ \t]{0,3})(`{3,}|~{3,})([^\n]*)\n([\s\S]*)$/g,
+        (match, prefix, indent, fence, info, body) => {
+            if (!/<canvasmode\b/i.test(body)) {
+                return match;
+            }
+            return `${prefix}${body.replace(new RegExp(`\\n[ \\t]*${fence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}{1,2}[ \\t]*$`), '')}`;
+        }
+    );
+
+    return text;
+}
+
+function normalizeCanvasProtocolForRendering(text = '') {
+    const input = unwrapCanvasProtocolCodeFences(text);
+    if (!/<canvasmode\b/i.test(input)) {
+        return { text: input, hasActiveCanvasStream: false, artifacts: [] };
+    }
+
+    const hasProtocolTypeAttr = (attrs = '') => {
+        const attrText = String(attrs || '');
+        const typeMatch = attrText.match(/\btype\s*=\s*(["'])(.*?)\1/i);
+        if (!typeMatch) return false;
+        const rawType = String(decodeCanvasAttribute(typeMatch[2]) || '').trim();
+        return rawType.length > 0;
+    };
+
+    let artifactSeq = 0;
+    const artifacts = [];
+
+    const toArtifact = (attrs = '', content = '') => {
+        const attrText = String(attrs || '');
+        const typeMatch = attrText.match(/\btype\s*=\s*(["'])(.*?)\1/i);
+        const titleMatch = attrText.match(/\btitle\s*=\s*(["'])(.*?)\1/i);
+        const type = normalizeCanvasType(typeMatch ? decodeCanvasAttribute(typeMatch[2]) : 'text');
+        const title = titleMatch ? decodeCanvasAttribute(titleMatch[2]).replace(/\s+/g, ' ').trim() : '';
+        const source = String(content || '').replace(/^\n/, '').replace(/\n$/, '');
+        const id = `canvas_${++artifactSeq}`;
+        artifacts.push({ id, type, title, source });
+        return `\n\n<div class="canvas-slot" data-canvas-slot="1" data-canvas-id="${id}"></div>\n\n`;
+    };
+
+    let hasActiveCanvasStream = false;
+    let normalized = '';
+    let cursorPos = 0;
+    const openTagRegex = /<canvasmode\b([^>]*)>/gi;
+    const anyTagRegex = /<\/?canvasmode\b[^>]*>/gi;
+
+    while (cursorPos < input.length) {
+        openTagRegex.lastIndex = cursorPos;
+        const openMatch = openTagRegex.exec(input);
+        if (!openMatch) {
+            normalized += input.slice(cursorPos);
+            break;
+        }
+
+        const openStart = openMatch.index ?? -1;
+        const openTag = openMatch[0] || '';
+        const attrs = openMatch[1] || '';
+        if (openStart < 0 || !openTag) {
+            normalized += input.slice(cursorPos);
+            break;
+        }
+
+        normalized += input.slice(cursorPos, openStart);
+        const openEnd = openStart + openTag.length;
+
+        if (!hasProtocolTypeAttr(attrs)) {
+            normalized += openTag;
+            cursorPos = openEnd;
+            continue;
+        }
+
+        let depth = 1;
+        let closeStart = -1;
+        let closeEnd = -1;
+        anyTagRegex.lastIndex = openEnd;
+        while (depth > 0) {
+            const tagMatch = anyTagRegex.exec(input);
+            if (!tagMatch) break;
+            const tagText = String(tagMatch[0] || '');
+            const isClose = /^<\s*\/\s*canvasmode\b/i.test(tagText);
+            if (isClose) {
+                depth -= 1;
+                if (depth === 0) {
+                    closeStart = tagMatch.index ?? -1;
+                    closeEnd = (tagMatch.index ?? 0) + tagText.length;
+                    break;
+                }
+            } else {
+                depth += 1;
+            }
+        }
+
+        if (closeStart >= 0 && closeEnd > closeStart) {
+            const content = input.slice(openEnd, closeStart);
+            normalized += toArtifact(attrs, content);
+            cursorPos = closeEnd;
+            continue;
+        }
+
+        hasActiveCanvasStream = true;
+        const tail = input.slice(openEnd);
+        normalized += toArtifact(attrs, tail);
+        cursorPos = input.length;
+        break;
+    }
+
+    return {
+        text: normalized,
+        hasActiveCanvasStream,
+        artifacts
+    };
+}
+
+function buildCanvasRouteId(messageId, artifactIndex) {
+    const raw = String(messageId || '').trim();
+    const normalized = raw
+        .replace(/^client_message_/i, '')
+        .replace(/^client[-_]?/i, '')
+        .replace(/^message[-_]?/i, '')
+        .replace(/^msg[-_]?/i, '')
+        .replace(/^cm[-_]?/i, '')
+        .replace(/[^A-Za-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    const parts = normalized.split('_').filter(Boolean);
+    const code = (parts.find(part => part.length >= 6) || parts[0] || 'item').slice(0, 8);
+    const index = Math.max(0, Number(artifactIndex) || 0);
+    return `canvas_${code}_${index}`;
+}
+
+function expandCanvasProtocolForExport(content) {
+    if (typeof content !== 'string' || !/<canvasmode\b/i.test(content)) {
+        return content;
+    }
+
+    const normalized = normalizeCanvasProtocolForRendering(content);
+    const artifacts = Array.isArray(normalized?.artifacts) ? normalized.artifacts : [];
+    if (artifacts.length === 0) {
+        return content;
+    }
+
+    return String(normalized.text || '').replace(
+        /<div class="canvas-slot" data-canvas-slot="1" data-canvas-id="([^"]+)"><\/div>/g,
+        (match, id) => {
+            const artifact = artifacts.find(item => item.id === id) || artifacts.shift();
+            if (!artifact) return '';
+            const language = getCanvasFenceLanguage(artifact.type || 'text') || '';
+            const title = artifact.title ? `### ${artifact.title}\n\n` : '';
+            return `${title}\`\`\`${language}\n${artifact.source || ''}\n\`\`\``;
+        }
+    );
+}
+
 function renderMessageContent(element, content, citations = null, isFinalRender = false, options = {}) {
     if (!isFinalRender) {
         const throttleState = element.__renderThrottle || (element.__renderThrottle = {
@@ -12786,6 +12982,21 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const { forcePlainText = false } = options || {};
+    const resolveRenderMessageTimestamp = () => {
+        const raw = options?.messageTimestamp
+            ?? options?.createdAt
+            ?? options?.created_at
+            ?? options?.timestamp
+            ?? element?.dataset?.messageCreatedAt
+            ?? null;
+        if (raw == null || raw === '') return null;
+        const ms = typeof raw === 'number' ? raw : Date.parse(raw);
+        return Number.isFinite(ms) ? ms : null;
+    };
+    const renderMessageTimestamp = resolveRenderMessageTimestamp();
+    if (renderMessageTimestamp != null) {
+        try { element.dataset.messageCreatedAt = new Date(renderMessageTimestamp).toISOString(); } catch (_) { }
+    }
     let renderTimeout;
 
     const clearRenderState = () => {
@@ -12882,6 +13093,26 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
     }
 
     messageText = rewritePexelsAttributionInMarkdown(messageText);
+
+    const stableMessageId =
+        options?.messageId ||
+        options?.message_id ||
+        element?.closest?.('.message')?.dataset?.messageId ||
+        element?.dataset?.messageId ||
+        renderMessageTimestamp ||
+        'active-stream-message';
+
+    const canvasNormalized = normalizeCanvasProtocolForRendering(messageText);
+    const hasActiveCanvasStream = !!canvasNormalized?.hasActiveCanvasStream;
+    const canvasArtifacts = Array.isArray(canvasNormalized?.artifacts) ? canvasNormalized.artifacts : [];
+    canvasArtifacts.forEach((artifact, index) => {
+        artifact.id = buildCanvasRouteId(stableMessageId, index);
+    });
+    let canvasSlotIndex = 0;
+    messageText = String(canvasNormalized?.text || '').replace(
+        /data-canvas-id="canvas_\d+"/g,
+        () => `data-canvas-id="${buildCanvasRouteId(stableMessageId, canvasSlotIndex++)}"`
+    );
 
     if (forcePlainText) {
         try { element.dataset.plainText = 'true'; } catch (_) { }
@@ -12991,7 +13222,7 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             lastParsedHtml: ''
         });
 
-        if (!isFinalRender && parseState.lastContentToParse === contentToParse) {
+        if (!isFinalRender && canvasArtifacts.length === 0 && parseState.lastContentToParse === contentToParse) {
             if (renderTimeout) clearTimeout(renderTimeout);
             return null;
         }
@@ -13053,7 +13284,7 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
 
         const sanitizedHtml = DOMPurify.sanitize(html, {
             ADD_TAGS: ['div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'span', 'img', 'br', 'a', 'h4', 'ul', 'li'],
-            ADD_ATTR: ['style', 'class', 'aria-hidden', 'src', 'alt', 'title', 'href', 'target', 'rel', 'data-cid', 'data-stream-image-slot']
+            ADD_ATTR: ['style', 'class', 'aria-hidden', 'src', 'alt', 'title', 'href', 'target', 'rel', 'data-cid', 'data-stream-image-slot', 'data-canvas-artifact', 'data-canvas-type', 'data-canvas-title', 'data-canvas-slot', 'data-canvas-id']
         });
 
         const tempContainer = document.createElement('div');
@@ -13144,171 +13375,20 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
         } catch (_) { }
 
         const finalSanitizedHtml = tempContainer.innerHTML;
-        const renderState = element.__renderState || (element.__renderState = {
-            lockedLength: 0,
-            lockedHtml: '',
-            lastLockedHtml: '',
-            streamingHtml: '',
-            lockedContainer: null,
-            streamingContainer: null
+        const renderState = streamImageRuntime.ensureStreamingRenderState({
+            element,
+            finalSanitizedHtml,
+            syntheticFenceAdded,
+            hasCanvasArtifacts: canvasArtifacts.length > 0,
+            isFinalRender
         });
 
-        const lowerHtml = finalSanitizedHtml.toLowerCase();
-        const lastTableCloseIndex = lowerHtml.lastIndexOf('</table>');
-        const lastPreCloseIndex = lowerHtml.lastIndexOf('</pre>');
-        const tableLockEnd = lastTableCloseIndex === -1 ? -1 : lastTableCloseIndex + '</table>'.length;
-        const codeLockEnd = lastPreCloseIndex === -1 ? -1 : lastPreCloseIndex + '</pre>'.length;
-
-        let mathLockEnd = findLastCompleteDisplayMathEnd(finalSanitizedHtml);
-
-        const newLockEnd = syntheticFenceAdded
-            ? Math.max(tableLockEnd, mathLockEnd)
-            : Math.max(tableLockEnd, codeLockEnd, mathLockEnd);
-
-        if (newLockEnd > renderState.lockedLength) {
-            renderState.lockedLength = newLockEnd;
-            renderState.lockedHtml = finalSanitizedHtml.slice(0, newLockEnd);
-        }
-
-        let streamingHtml = finalSanitizedHtml.slice(renderState.lockedLength);
-
-        if (!isFinalRender && streamingHtml) {
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = streamingHtml;
-
-            const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT, null, false);
-            let targetNode = null;
-            while (true) {
-                const n = walker.nextNode();
-                if (!n) break;
-                const parentTag = (n.parentNode && n.parentNode.tagName) ? n.parentNode.tagName.toUpperCase() : '';
-                if (parentTag !== 'CODE' && parentTag !== 'PRE' && parentTag !== 'BLOCKQUOTE') {
-                    targetNode = n;
-                    break;
-                }
-            }
-
-            if (targetNode && targetNode.textContent) {
-                const before = targetNode.textContent;
-                const after = before
-                    .replace(/^\s*>(\s+)?/, '')
-                    .replace(/^\s*([`~]{3,})\s*$/, '')
-                    .replace(/^\s*([`~]{1,2})\s*$/, '')
-                    .replace(/^\s*\]\>\s*/, '')
-                    .replace(/^\s*\|\>\s*/, '')
-                    .replace(/^\s*\]>\s*/, '');
-                if (after !== before) {
-                    targetNode.textContent = after;
-                    streamingHtml = tempDiv.innerHTML;
-                }
-            }
-        }
-
-        let displayMathState = null;
-        if (!renderState.lockedContainer || !renderState.streamingContainer || !element.contains(renderState.lockedContainer)) {
-            displayMathState = captureDisplayMathState(element, [element]);
-            const preservedStreamImageNodes = Array.from(element.querySelectorAll('.stream-image-attachments'));
-            element.innerHTML = '';
-            renderState.lockedContainer = document.createElement('div');
-            renderState.lockedContainer.className = 'locked-response-content';
-            renderState.lockedContainer.style.display = 'contents';
-            renderState.streamingContainer = document.createElement('div');
-            renderState.streamingContainer.className = 'streaming-response-content';
-            renderState.streamingContainer.style.display = 'contents';
-            element.appendChild(renderState.lockedContainer);
-            element.appendChild(renderState.streamingContainer);
-            preservedStreamImageNodes.forEach((node) => element.appendChild(node));
-            renderState.lastLockedHtml = '';
-            renderState.streamingHtml = '';
-        }
-
-        const isNodeImmediatelyAfter = (node, target) => {
-            if (!node || !target || !target.parentNode) return false;
-            if (node.parentNode !== target.parentNode) return false;
-            let cursor = target.nextSibling;
-            while (cursor && cursor.nodeType === Node.TEXT_NODE && !String(cursor.textContent || '').trim()) {
-                cursor = cursor.nextSibling;
-            }
-            return cursor === node;
-        };
-
-        const repositionPendingNode = (node) => {
-            if (!node || !node.isConnected) return;
-            if (!isFinalRender && scrollManager.isUserScrolling) return;
-
-            let placement = '';
-            const pendingSlot = String(node.dataset.pendingSlot || '').trim();
-            if (pendingSlot) {
-                placement = `slot:${pendingSlot}`;
-            } else {
-                const pendingKey = String(node.dataset.pendingKey || '').trim();
-                if (pendingKey) {
-                    const first = pendingKey.indexOf(':');
-                    const second = first >= 0 ? pendingKey.indexOf(':', first + 1) : -1;
-                    if (second >= 0 && second < pendingKey.length - 1) {
-                        placement = pendingKey.slice(second + 1).trim();
-                    }
-                }
-            }
-            if (!placement) return;
-
-            const normalizedPlacement = streamImageRuntime.normalizeStreamImagePlacement(placement);
-            if (normalizedPlacement.startsWith('slot:')) {
-                const slotId = normalizedPlacement.slice('slot:'.length).trim();
-                const anchor = slotId ? element.querySelector(`[data-stream-image-slot="${slotId}"]`) : null;
-                if (!anchor) return;
-                const anchorBlock = anchor.closest('p, li, blockquote, pre, table, h1, h2, h3, h4, h5, h6');
-                const target = (anchorBlock && anchorBlock.parentNode) ? anchorBlock : (anchor.parentNode ? anchor : null);
-                if (!target) return;
-                if (isNodeImmediatelyAfter(node, target)) return;
-                if (target === anchorBlock) {
-                    anchorBlock.insertAdjacentElement('afterend', node);
-                } else {
-                    anchor.insertAdjacentElement('afterend', node);
-                }
-                return;
-            }
-
-            if (normalizedPlacement.startsWith('after_paragraph:')) {
-                const n = Math.max(1, parseInt(normalizedPlacement.split(':')[1], 10) || 1);
-                const paragraphTargets = Array.from(
-                    element.querySelectorAll('p, li, blockquote, pre, table, h1, h2, h3, h4, h5, h6')
-                ).filter(target => !target.closest('.stream-image-attachments'));
-                const target = paragraphTargets[Math.min(n - 1, paragraphTargets.length - 1)];
-                if (target && target.parentNode) {
-                    if (isNodeImmediatelyAfter(node, target)) return;
-                    target.insertAdjacentElement('afterend', node);
-                }
-                return;
-            }
-
-            if (normalizedPlacement === 'head') {
-                const firstNode = element.firstElementChild;
-                if (firstNode && firstNode !== node) {
-                    element.insertBefore(node, firstNode);
-                }
-            }
-        };
-
-        const lockedUpdate = planStreamingContentUpdate(renderState.lockedContainer, renderState.lastLockedHtml, renderState.lockedHtml);
-        const streamingUpdate = planStreamingContentUpdate(renderState.streamingContainer, renderState.streamingHtml, streamingHtml);
-        const replacedRoots = [lockedUpdate, streamingUpdate].flatMap(update => {
-            if (update.kind === 'replace-region') return [update.container];
-            if (update.kind === 'replace-tail') return update.removedNodes;
-            return [];
+        const contentUpdate = streamImageRuntime.applyStreamingLockedContent({
+            element,
+            renderState,
+            finalSanitizedHtml,
+            isFinalRender
         });
-        displayMathState ||= captureDisplayMathState(element, replacedRoots);
-        if (renderState.lastLockedHtml !== renderState.lockedHtml) {
-            commitStreamingContentUpdate(lockedUpdate);
-            renderState.lastLockedHtml = renderState.lockedHtml;
-        }
-
-        if (renderState.streamingHtml !== streamingHtml) {
-            commitStreamingContentUpdate(streamingUpdate);
-            renderState.streamingHtml = streamingHtml;
-        }
-
-        Array.from(element.querySelectorAll('.stream-image-attachments[data-pending="1"]')).forEach(repositionPendingNode);
 
         let reasoningText = '';
         if (typeof content === 'object' && content !== null && typeof content.reasoning === 'string') {
@@ -13559,6 +13639,19 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             });
         }
 
+        try {
+            enhanceCanvasBlocks(element, {
+                isFinalRender,
+                syntheticFenceAdded,
+                allowStandaloneHtmlFallback: element?.dataset?.canvasMode === 'true',
+                autoOpenStreaming: !isFinalRender && hasActiveCanvasStream,
+                canvasArtifacts,
+                messageTimestamp: renderMessageTimestamp,
+                messageId: stableMessageId,
+                getMessage: getToastMessage
+            });
+        } catch (_) { }
+
         element.querySelectorAll('img:not([data-image-url])').forEach(img => {
             if (!img.closest('.image-preview-container')) {
                 img.style.cursor = 'pointer';
@@ -13609,7 +13702,7 @@ function renderMessageContent(element, content, citations = null, isFinalRender 
             });
         }
 
-        restoreDisplayMathState(element, displayMathState);
+        streamImageRuntime.restoreDisplayMathState(element, contentUpdate?.displayMathState);
 
         handleFinalRenderAutoFollow({
             isFinalRender,
@@ -13674,10 +13767,19 @@ function createMessageElement(role, messageObject, options = {}) {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'content';
     let renderPromise = null;
+    const messageTimestampMs = getMessageTimestampMs(messageObject);
     const renderOptions = {
         forcePlainText: role === 'user',
-        staticImageRender: !!historyRender && role === 'assistant'
+        staticImageRender: !!historyRender && role === 'assistant',
+        messageTimestamp: messageTimestampMs,
+        messageId: messageObject?.client_message_id || messageObject?.clientMessageId || ''
     };
+    if (renderOptions.messageId) {
+        try { contentDiv.dataset.messageId = renderOptions.messageId; } catch (_) { }
+    }
+    if (messageTimestampMs != null) {
+        try { contentDiv.dataset.messageCreatedAt = new Date(messageTimestampMs).toISOString(); } catch (_) { }
+    }
     const messageImageParts = streamImageRuntime.normalizeStreamImageParts(messageObject?.image_parts || messageObject?.image_urls || []);
     const messageImageLayout = streamImageRuntime.normalizeStreamImageLayout(messageObject?.image_layout || []);
     if (renderOptions.forcePlainText) {
@@ -17748,6 +17850,7 @@ async function handleChatMessage(userContent, options = {}) {
 
     let fullResponse = '';
     const contentDiv = assistantMessageElement.querySelector('.content');
+    if (contentDiv) contentDiv.dataset.canvasMode = isCanvasModeActive ? 'true' : 'false';
     if (contentDiv && !existingAssistantElement) {
         contentDiv.innerHTML = `
         <div class="thinking-indicator-new">
@@ -17791,7 +17894,9 @@ async function handleChatMessage(userContent, options = {}) {
             intent_analysis: intentAnalysis.intentResult,
         };
 
-        if (isMindmapModeActive) {
+        if (isCanvasModeActive) {
+            body.context_mode = 'canvas';
+        } else if (isMindmapModeActive) {
             body.context_mode = 'mindmap';
         }
 
@@ -20056,6 +20161,10 @@ async function callAISynchronously(prompt, model = 'gemini-2.5-flash-lite', incr
 
 function updateSearchModeUI() {
     if (isSearchModeActive) {
+        if (isCanvasModeActive) {
+            isCanvasModeActive = false;
+            elements.toolCanvasOption?.classList.remove('active');
+        }
         elements.toolSearchOption.classList.add('active');
         if (isMindmapModeActive) {
             requestMindmapMode(false);
@@ -20079,6 +20188,10 @@ function updateSearchModeUI() {
 
 function updateImageModeUI() {
     if (isImageModeActive) {
+        if (isCanvasModeActive) {
+            isCanvasModeActive = false;
+            elements.toolCanvasOption?.classList.remove('active');
+        }
         elements.toolImageOption.classList.add('active');
         if (isMindmapModeActive) {
             requestMindmapMode(false);
@@ -20100,8 +20213,39 @@ function updateImageModeUI() {
     updateActiveModel();
 }
 
+function updateCanvasModeUI() {
+    let shouldRefreshModel = false;
+    if (isCanvasModeActive) {
+        elements.toolCanvasOption?.classList.add('active');
+        if (isMindmapModeActive) requestMindmapMode(false);
+        if (isSearchModeActive) {
+            isSearchModeActive = false;
+            elements.toolSearchOption.classList.remove('active');
+            shouldRefreshModel = true;
+        }
+        if (isImageModeActive) {
+            isImageModeActive = false;
+            elements.toolImageOption.classList.remove('active');
+            shouldRefreshModel = true;
+        }
+        if (isResearchModeActive) {
+            isResearchModeActive = false;
+            elements.toolResearchOption.classList.remove('active');
+            shouldRefreshModel = true;
+        }
+    } else {
+        elements.toolCanvasOption?.classList.remove('active');
+    }
+
+    updateAttachmentButtonState();
+    updateToolsButtonState();
+    if (shouldRefreshModel) {
+        updateActiveModel();
+    }
+}
+
 function updateToolsButtonState() {
-    const hasActiveToolMode = isSearchModeActive || isImageModeActive || isResearchModeActive || isMindmapModeActive;
+    const hasActiveToolMode = isSearchModeActive || isImageModeActive || isResearchModeActive || isMindmapModeActive || isCanvasModeActive;
     if (hasActiveToolMode) {
         elements.toolsMenuBtn.classList.add('active');
     } else {
@@ -20118,7 +20262,7 @@ function syncInputMenuButtonState() {
         addFileBtn.classList.toggle('menu-open', isUploadMenuOpen);
     }
     const isToolsMenuOpen = !!elements.toolsMenu?.classList.contains('visible');
-    const hasActiveToolMode = isSearchModeActive || isImageModeActive || isResearchModeActive || isMindmapModeActive;
+    const hasActiveToolMode = isSearchModeActive || isImageModeActive || isResearchModeActive || isMindmapModeActive || isCanvasModeActive;
     if (elements.toolsMenuBtn) {
         elements.toolsMenuBtn.classList.toggle('menu-open', isToolsMenuOpen || hasActiveToolMode);
     }
@@ -20148,6 +20292,10 @@ function updateAttachmentButtonState() {
 
 function updateResearchModeUI() {
     if (isResearchModeActive) {
+        if (isCanvasModeActive) {
+            isCanvasModeActive = false;
+            elements.toolCanvasOption?.classList.remove('active');
+        }
         elements.toolResearchOption.classList.add('active');
         if (isMindmapModeActive) {
             requestMindmapMode(false);
@@ -20173,6 +20321,8 @@ function handleMindmapModeChange(active, detail = {}) {
     const nextActive = !!active;
     isMindmapModeActive = nextActive;
     if (nextActive) {
+        isCanvasModeActive = false;
+        elements.toolCanvasOption?.classList.remove('active');
         if (isSearchModeActive) {
             isSearchModeActive = false;
             elements.toolSearchOption?.classList?.remove('active');
@@ -20852,8 +21002,15 @@ function closeFileViewerIfOpen() {
 }
 
 function setupPreviewerShortcuts() {
+    document.addEventListener('lab:canvas-drawer-opened', dismissKeyboardForCanvasDrawerOpen);
     document.addEventListener('keydown', (e) => {
         if (!['Escape', 'Esc', 'ArrowLeft', 'Backspace'].includes(e.key)) return;
+        if (isCanvasDrawerOpen() && ['Escape', 'Esc'].includes(e.key)) {
+            closeCanvasDrawer(true, { routeHandled: true });
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         const closed = closeImageViewerIfOpen() || closeFileViewerIfOpen();
         if (closed) {
             e.preventDefault();
@@ -21965,6 +22122,26 @@ function setupEventListeners() {
 
         updateImageModeUI();
         showToast(isImageModeActive ? getToastMessage('toast.imageModeOn') : getToastMessage('toast.imageModeOff'), 'info');
+
+        elements.toolsMenu.classList.remove('visible');
+        syncInputMenuButtonState();
+
+        const isKeyboardOpen = document.body.classList.contains('keyboard-is-open')
+            || document.activeElement === elements.messageInput;
+
+        if (wasActive && !isKeyboardOpen) {
+            elements.messageInput.blur();
+        }
+    });
+
+    elements.toolCanvasOption?.addEventListener('click', (e) => {
+        e.stopPropagation();
+
+        const wasActive = isCanvasModeActive;
+        isCanvasModeActive = !isCanvasModeActive;
+
+        updateCanvasModeUI();
+        showToast(isCanvasModeActive ? getToastMessage('toast.canvasModeOn') : getToastMessage('toast.canvasModeOff'), 'info');
 
         elements.toolsMenu.classList.remove('visible');
         syncInputMenuButtonState();

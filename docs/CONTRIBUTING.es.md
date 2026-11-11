@@ -194,6 +194,8 @@ Para cambios de streaming, compruebe el búfer de inicio/reanudación, el vaciad
 
 Para cambios del DOM o del estado de fórmulas, compruebe en el navegador la reutilización de nodos, los cambios de estructura de Markdown y el desplazamiento horizontal de fórmulas.
 
+Para Canvas, compruebe las tarjetas en streaming e históricas, la edición/copia, el cambio entre código y vista previa, los runtimes compatibles y el panel de escritorio/móvil. Mantenga los archivos de validación locales y distinga la simulación del backend de las pruebas con modelos reales.
+
 **Plantilla de Pull Request**
 
 ```markdown

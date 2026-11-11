@@ -201,6 +201,7 @@ async function handleFileUpload(file) {
 - For parsers, use sanitized documents and check text, image references, Worker execution and relevant fallback paths.
 - For streaming changes, check start/resume buffering, EOF draining and existing image/citation handling; report browser/live-service verification separately.
 - For DOM/formula-state changes, check node reuse, Markdown structure changes and horizontal formula scrolling in the browser.
+- For Canvas changes, check streamed and historical cards, source edits/copy, code/preview switching, supported preview runtimes and desktop/mobile drawer layout. Keep validation fixtures local and distinguish backend simulation from live-model verification.
 - For keyboard changes, state browsers/devices tested. Node tests and desktop resizing do not prove native keyboard behavior.
 - Explain actual checks and remaining verification boundaries in the PR; preserve frontend contracts when changing shared modules.
 - Keep backend implementations, subscription/payment rules, hosted routing, credentials, signing material and user data out of the repository. Architecture descriptions can still explain the complete project.
