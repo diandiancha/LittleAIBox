@@ -135,6 +135,7 @@ These screenshots illustrate earlier interface versions; individual controls may
 - **Mindmap Rendering**: Markmap-based mindmap rendering and preview for structured markdown content
 - **Chart Export**: Download generated charts (Mermaid diagrams and Vega-Lite visualizations) as PNG or SVG files
 - **GitHub Flavored Markdown**: Full GFM support with syntax highlighting
+- **CJK Emphasis Compatibility**: Reuses the complete project's Marked extension for supported bold/italic boundaries next to CJK text and punctuation
 - **Stream Pacing**: Reuses the complete project's pacer to adjust output to text arrivals and queue length for supported model families, with fallback typing for other models
 - **Incremental Rich Content**: Reuses the complete project's DOM update and formula-state helpers to append content, retain reusable rendered nodes and restore matching formulas' horizontal scroll after region replacement
 

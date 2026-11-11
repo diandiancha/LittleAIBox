@@ -132,6 +132,7 @@ LittleAIBox est parfait pour :
 - **Rendu Mindmap** : Rendu et aperçu de cartes mentales basés sur Markmap
 - **Export de Graphiques** : Téléchargez les graphiques générés (diagrammes Mermaid et visualisations Vega-Lite) en fichiers PNG ou SVG
 - **GitHub Flavored Markdown** : Support complet GFM avec coloration syntaxique
+- **Compatibilité de l’Emphase CJK** : Réutilise l’extension Marked du projet complet pour certaines limites de gras et d’italique au voisinage du texte et de la ponctuation CJK
 - **Rythme du Streaming** : Réutilise le régulateur du projet complet pour adapter la sortie aux arrivées de texte et à la file des familles de modèles prises en charge, en conservant la saisie de repli pour les autres modèles
 - **Contenu Riche Incrémental** : Réutilise les utilitaires de mise à jour du DOM et d’état des formules du projet complet pour ajouter du contenu, conserver les nœuds rendus réutilisables et restaurer le défilement horizontal des formules correspondantes après remplacement d’une zone
 
