@@ -36,6 +36,9 @@
     "continueAsGuest": "ゲストとして続行",
     "guestContinueLegalNotice": "本サービスを利用することで、プライバシーポリシーおよび利用規約に同意したものとみなされます。",
     "common": {
+        "previous": "前へ",
+        "next": "次へ",
+        "open": "開く",
         "cancel": "キャンセル",
         "confirm": "確認",
         "ok": "OK",
@@ -198,6 +201,8 @@
         }
     },
     "toast": {
+        "canvasModeOn": "キャンバスモードがオンになりました",
+        "canvasModeOff": "キャンバスモードがオフになりました",
         "exportInProgress": "エクスポート中です、\nページを操作しないでください",
         "storagePermissionRequired": "システム設定でストレージ権限を付与してください",
         "grantStoragePermission": "画像を保存するにはストレージ権限を付与してください",
@@ -525,6 +530,9 @@
         "slide": "スライド"
     },
     "ui": {
+        "canvasMode": "キャンバスモード",
+        "preview": "プレビュー",
+        "code": "コード",
         "exportFormatTitle": "エクスポート形式を選択",
         "exportRoleAssistant": "アシスタント",
         "exportRoleUser": "ユーザー",

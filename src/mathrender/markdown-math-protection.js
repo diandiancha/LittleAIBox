@@ -121,15 +121,25 @@ export function protectMarkdownMathPlaceholders(markdown, options = {}) {
 
     text = protectOutsideCode(text, value => value.replace(/\\\(([^\n]*?)\\\)/g, pushInlineMath));
 
-    const restore = (value, { maxPasses = 2 } = {}) => {
+    const escapeMathHtml = (value) => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const restore = (value, { maxPasses = 2, escapeHtml = false } = {}) => {
         let result = String(value || '');
         const displayRegex = new RegExp(`${escapeRegExp(displayTokenPrefix)}(\\d+)${escapeRegExp(tokenSuffix)}`, 'g');
         const inlineRegex = new RegExp(`${escapeRegExp(inlineTokenPrefix)}(\\d+)${escapeRegExp(tokenSuffix)}`, 'g');
+        // HTML parsing must keep formula operators as text; KaTeX reads the decoded DOM text.
+        const displayValues = escapeHtml ? displayMath.map(escapeMathHtml) : displayMath;
+        const inlineValues = escapeHtml ? inlineMath.map(escapeMathHtml) : inlineMath;
 
         for (let i = 0; i < maxPasses; i++) {
             const restored = result
-                .replace(displayRegex, (match, index) => displayMath[parseInt(index, 10)] ?? match)
-                .replace(inlineRegex, (match, index) => inlineMath[parseInt(index, 10)] ?? match);
+                .replace(displayRegex, (match, index) => displayValues[parseInt(index, 10)] ?? match)
+                .replace(inlineRegex, (match, index) => inlineValues[parseInt(index, 10)] ?? match);
             if (restored === result) break;
             result = restored;
         }

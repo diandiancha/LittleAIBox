@@ -133,6 +133,7 @@ LittleAIBox는 다음 사용자에게 완벽합니다:
 - **차트 내보내기**: 생성된 차트(Mermaid 다이어그램 및 Vega-Lite 시각화)를 PNG 또는 SVG 파일로 다운로드 가능
 - **GitHub 스타일**: 구문 강조가 포함된 완전한 GFM 지원
 - **CJK 강조 호환성**: 전체 프로젝트의 기존 Marked 확장을 재사용하여 CJK 문자·문장 부호에 인접한 일부 굵게·기울임 경계를 처리
+- **Canvas 작업 공간**: 스트리밍 카드, 소스 보기·편집·복사와 HTML·Markdown·SVG·React/Vue 컴포넌트·p5·Markmap의 분리된 미리보기. 데스크톱 분할 화면과 모바일 서랍을 지원합니다. 다른 언어는 소스 보기와 강조 표시이며 임의 언어 실행 환경은 아닙니다. 생성에는 `context_mode: "canvas"`와 `<canvasmode type="…" title="…">…</canvasmode>` 응답을 지원하는 백엔드가 필요합니다.
 - **스트림 속도 조절**: 전체 프로젝트의 기존 페이서를 재사용하여 지원 모델의 텍스트 도착과 큐 적체에 따라 출력 속도를 조절하고, 다른 모델의 폴백 타이핑 경로는 유지
 - **리치 콘텐츠 증분 갱신**: 전체 프로젝트의 DOM 갱신 및 수식 상태 헬퍼를 재사용하여 콘텐츠를 추가하고 재사용 가능한 렌더링 노드를 유지하며, 영역 재구성 후 같은 수식의 가로 스크롤을 복원
 
@@ -219,11 +220,12 @@ flowchart TB
         end
         subgraph PRESENTATION["Streaming and productivity"]
             F_STREAM["Response stream / pacing / incremental DOM"]
+            F_CANVAS["Canvas: source / editing / isolated preview"]
             F_MARKDOWN["Markdown / highlighting / math protection"]
             F_CHARTS["KaTeX / Mermaid / Vega / mind maps"]
             F_IMAGE_VIEW["CID resolution / generated image layout"]
             F_EXPORT["Word / Excel / PPT / PDF export"]
-            F_EXTENSIONS["Canvas / entertainment modules: not synced"]
+            F_EXTENSIONS["Entertainment extensions: not synced"]
         end
         subgraph CLIENT_STATE["Conversation and local state"]
             F_CHAT["Conversations / turns / message identity"]
@@ -310,6 +312,8 @@ flowchart TB
     F_RETRIEVAL --> B_GATEWAY
     B_MODEL --> F_STREAM
     F_STREAM --> F_MARKDOWN
+    F_STREAM --> F_CANVAS
+    F_CANVAS --> F_EXPORT
     F_MARKDOWN --> F_CHARTS
     F_STREAM --> F_IMAGE_VIEW
     F_CHARTS --> F_ENTRY
@@ -362,7 +366,7 @@ flowchart TB
     class F_ENTRY,F_COMPOSER,F_KEYBOARD,F_VIEWPORT,F_I18N,F_NATIVE frontend
     class F_READERS,F_WORKERS,F_IMAGES,F_DOC_PLAN,F_DOC_PROCESS,F_VISION frontend
     class F_HISTORY,F_RETRIEVAL,F_CONTEXT,F_ASSEMBLER,F_TRANSPORT frontend
-    class F_STREAM,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
+    class F_STREAM,F_CANVAS,F_MARKDOWN,F_CHARTS,F_IMAGE_VIEW,F_EXPORT frontend
     class F_CHAT,F_SYNC,F_CACHE,F_PWA,F_BRIDGE frontend
     class B_GATEWAY,B_SESSION,B_AUTH,B_DATA,B_MODEL,B_SEARCH,B_RESOURCE,B_STORAGE,M_ADAPTER,M_KEYS,M_RETRY,M_LIMITER backend
     class D_DATABASE,D_OBJECTS,D_KV,D_QUEUE,D_CLEANUP,D_CRON,D_DLQ storage

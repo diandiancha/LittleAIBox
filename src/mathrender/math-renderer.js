@@ -1,10 +1,11 @@
-export { KATEX_CONFIG, buildKatexConfigRuntimeLiteral } from './math-renderer-config.js';
+export { buildKatexConfigRuntimeLiteral, KATEX_CONFIG } from './math-renderer-config.js';
+import { advanceMarkdownFenceState } from './markdown-fences.js';
 import {
+    findMathBlockLineIndexes,
     looksLikeChemicalEquation,
     normalizeChemicalBody,
     normalizeMarkdownForMath
 } from './markdown-normalizer.js';
-import { advanceMarkdownFenceState } from './markdown-fences.js';
 
 export class MathRenderer {
     constructor(katexConfig) {
@@ -52,6 +53,7 @@ export class MathRenderer {
     wrapBareInlineLatexCommands(text) {
         try {
             const lines = text.split(/\r?\n/);
+            const mathBlockLines = findMathBlockLineIndexes(text);
             let fence = null;
             const inlineRegex = new RegExp(this.inlinePatternSource, 'gu');
             const hasExplicitMathDelimiters = (line) =>
@@ -81,6 +83,7 @@ export class MathRenderer {
                 }
 
                 if (fence) continue;
+                if (mathBlockLines.has(i)) continue;
                 if (hasExplicitMathDelimiters(line)) {
                     continue;
                 }

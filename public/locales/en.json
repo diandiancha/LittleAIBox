@@ -36,6 +36,9 @@
     "continueAsGuest": "Continue as Guest",
     "guestContinueLegalNotice": "By using this service, you agree to the Privacy Policy and Terms of Service.",
     "common": {
+        "previous": "Previous",
+        "next": "Next",
+        "open": "Open",
         "cancel": "Cancel",
         "confirm": "Confirm",
         "ok": "OK",
@@ -198,6 +201,8 @@
         }
     },
     "toast": {
+        "canvasModeOn": "Canvas mode is on",
+        "canvasModeOff": "Canvas mode is off",
         "exportInProgress": "Export in progress,\nplease do not operate the page",
         "storagePermissionRequired": "Please grant storage permission in system settings",
         "grantStoragePermission": "Please grant storage permission to save images",
@@ -525,6 +530,9 @@
         "slide": "Slide"
     },
     "ui": {
+        "canvasMode": "Canvas Mode",
+        "preview": "Preview",
+        "code": "Code",
         "appTitle": "LittleAIBox",
         "appSubtitle": "Privacy-First AI Chat Platform",
         "loadingCoreResources": "Loading core resources...",

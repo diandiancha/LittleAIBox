@@ -36,6 +36,9 @@
     "continueAsGuest": "以访客身份继续体验",
     "guestContinueLegalNotice": "使用本服务即代表同意隐私政策和服务条款",
     "common": {
+        "previous": "上一个",
+        "next": "下一个",
+        "open": "打开",
         "cancel": "取消",
         "confirm": "确定",
         "ok": "确定",
@@ -198,6 +201,8 @@
         }
     },
     "toast": {
+        "canvasModeOn": "画布模式已开启",
+        "canvasModeOff": "画布模式已关闭",
         "exportInProgress": "正在进行导出操作，\n请勿操作页面",
         "storagePermissionRequired": "请在系统设置中授予存储权限",
         "grantStoragePermission": "请授予存储权限以保存图片",
@@ -525,6 +530,9 @@
         "slide": "幻灯片"
     },
     "ui": {
+        "canvasMode": "画布模式",
+        "preview": "预览",
+        "code": "代码",
         "appTitle": "LittleAIBox",
         "appSubtitle": "隐私优先的AI对话平台",
         "loadingCoreResources": "正在加载核心资源...",
